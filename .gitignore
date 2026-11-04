@@ -7,6 +7,12 @@ evidence/*
 *.key
 *.crt
 clouds.yaml
-terraform.tfstate
-terraform.tfstate.*
+# Terraform state, provider downloads, plans, and variable files may contain secrets
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.*
+*.tfvars
+*.tfvars.json
 *.retry

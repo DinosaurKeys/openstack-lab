@@ -39,8 +39,10 @@ Every operational script should state:
 
 Use read-only checks by default. If a mutating command is later justified, place it behind an explicit action mode, validate its inputs and target, preserve a recovery path, and verify the resulting state with a separate read-back check. High-impact operations—network changes, disk/LVM changes, service restarts that affect HA, reboot, database recovery, failover—need a reviewed plan and explicit user approval before execution.
 
-## Operational sequence
+## Installation and operations sequence
 
-Keep the learning order in the guide's 13 steps. In particular, Step 11 is verification and controlled testing of the existing HA/VIP design: the lab owner reports all three nodes already have controller, network, and compute roles and are configured for HA. It is not an instruction to create a new cluster or add an unplanned VIP.
+Start with clean Ubuntu systems and follow the [Full Installation Guide](FULL-INSTALLATION-GUIDE.md) in order. The optional validation scripts do not replace installation steps. After deployment, collect read-only facts from all three nodes and the relevant OpenStack APIs before changing state.
 
-When troubleshooting, first collect independent, read-only facts from all three nodes and the relevant OpenStack APIs. Correlate symptoms before choosing a change. Never equate “SSH failed” with “node is down,” “one service is up” with “HA works,” or “API says ACTIVE” with proven guest traffic/data integrity.
+The guide's three-node `control`, `network`, and `compute` groups are the target Kolla-Ansible deployment. HA configuration is established during deployment through the release-matched inventory and VIP settings; later steps verify behavior and introduce only approved, controlled tests. Do not add a second VIP or a different cluster manager on top of Kolla's configuration.
+
+When troubleshooting, correlate symptoms before choosing a change. Never equate “SSH failed” with “node is down,” “one service is up” with “HA works,” or “API says ACTIVE” with proven guest traffic/data integrity.

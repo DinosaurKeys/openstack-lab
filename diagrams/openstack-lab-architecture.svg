@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
-  <title id="title">OpenStack three-node HA learning lab</title>
-  <desc id="desc">Separate management VM connects to three nodes with controller, network, and compute roles reported by the lab owner. Live service placement and exact HA mechanisms remain to be verified.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="auto" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">OpenStack Lab — target Kolla-Ansible deployment</title>
+  <desc id="desc">A separate management VM deploys a three-node Kolla-Ansible OpenStack lab. Every node is assigned control, network, and compute roles. The management LAN carries API and tunnel traffic, and a second network is reserved for Neutron provider networking.</desc>
   <defs>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width="1"/></pattern>
     <style>
@@ -8,33 +8,58 @@
       .label{font:700 19px sans-serif;fill:#f8fafc}.small{font:15px sans-serif;fill:#cbd5e1}
       .tiny{font:13px sans-serif;fill:#94a3b8}.box{stroke-width:2;rx:16}
       .mgmt{fill:#0c4a6e;stroke:#22d3ee}.node{fill:#172554;stroke:#818cf8}
-      .ha{fill:#064e3b;stroke:#34d399}.boundary{fill:none;stroke:#64748b;stroke-width:2;stroke-dasharray:10 7;rx:20}
+      .vip{fill:#064e3b;stroke:#34d399}.net{fill:#1e293b;stroke:#f59e0b;stroke-width:2;rx:16}
+      .boundary{fill:none;stroke:#64748b;stroke-width:2;stroke-dasharray:10 7;rx:20}
     </style>
   </defs>
   <rect width="1400" height="900" fill="#020617"/><rect width="1400" height="900" fill="url(#grid)" opacity=".8"/>
-  <text x="70" y="65" class="title">OpenStack Lab — reported three-node HA topology</text>
-  <text x="70" y="98" class="subtitle">Reported roles; live service placement and HA mechanisms remain to be verified.</text>
-  <rect x="55" y="140" width="1290" height="340" class="boundary"/>
-  <text x="80" y="173" class="small">Management / API LAN — node addresses shown; management VM must use a separate address</text>
-  <rect x="90" y="235" width="220" height="150" class="box mgmt"/>
-  <text x="200" y="275" text-anchor="middle" class="label">Management VM</text>
-  <text x="200" y="308" text-anchor="middle" class="small">Git · Ansible · tools</text>
-  <text x="200" y="343" text-anchor="middle" class="tiny">SSH / API checks</text>
-  <path d="M310 310H390M690 310H765M1065 310H1140" fill="none" stroke="#22d3ee" stroke-width="4"/>
-  <rect x="390" y="215" width="300" height="205" class="box node"/>
-  <rect x="765" y="215" width="300" height="205" class="box node"/>
-  <rect x="1140" y="215" width="205" height="205" class="box node"/>
-  <text x="540" y="255" text-anchor="middle" class="label">Node 1</text><text x="540" y="282" text-anchor="middle" class="small">192.168.0.200</text>
-  <text x="540" y="324" text-anchor="middle" class="small">Controller · Network</text><text x="540" y="350" text-anchor="middle" class="small">Compute · HA member</text>
-  <text x="915" y="255" text-anchor="middle" class="label">Node 2</text><text x="915" y="282" text-anchor="middle" class="small">192.168.0.201</text>
-  <text x="915" y="324" text-anchor="middle" class="small">Controller · Network</text><text x="915" y="350" text-anchor="middle" class="small">Compute · HA member</text>
-  <text x="1242" y="255" text-anchor="middle" class="label">Node 3</text><text x="1242" y="282" text-anchor="middle" class="small">192.168.0.202</text>
-  <text x="1242" y="324" text-anchor="middle" class="small">Controller · Network</text><text x="1242" y="350" text-anchor="middle" class="small">Compute · HA member</text>
-  <rect x="120" y="535" width="1160" height="145" class="box ha"/>
-  <text x="700" y="575" text-anchor="middle" class="label">Existing HA — verify from live state</text>
-  <text x="700" y="611" text-anchor="middle" class="small">Discover API/VIP, database and messaging topology, network-agent/router HA, compute, and storage behavior.</text>
-  <text x="700" y="644" text-anchor="middle" class="tiny">A running service or moving VIP alone does not prove end-to-end availability or data durability.</text>
-  <rect x="120" y="735" width="1160" height="105" class="boundary"/>
-  <text x="700" y="775" text-anchor="middle" class="label">Network paths to verify</text>
-  <text x="700" y="810" text-anchor="middle" class="small">Management / API → internal / tunnel → provider / external</text>
+  <text x="70" y="65" class="title">OpenStack Lab — target Kolla-Ansible deployment</text>
+  <text x="70" y="98" class="subtitle">Fresh Ubuntu Server install · three-node multi-role HA learning cluster</text>
+
+  <rect x="55" y="140" width="1290" height="365" class="boundary"/>
+  <text x="80" y="173" class="small">Management LAN — SSH, Ansible, APIs, Kolla VIP, and default tunnel path</text>
+
+  <rect x="85" y="245" width="270" height="175" class="box mgmt"/>
+  <text x="220" y="286" text-anchor="middle" class="label">Management VM</text>
+  <text x="220" y="320" text-anchor="middle" class="small">Unique management IP</text>
+  <text x="220" y="355" text-anchor="middle" class="small">Kolla-Ansible · OpenStack CLI</text>
+  <text x="220" y="390" text-anchor="middle" class="tiny">Deployment host; not a cloud node</text>
+
+  <path d="M355 330H400M700 330H735M1035 330H1070" fill="none" stroke="#22d3ee" stroke-width="4"/>
+  <path d="M355 345H400M700 345H735M1035 345H1070" fill="none" stroke="#22d3ee" stroke-width="1" stroke-dasharray="7 6"/>
+
+  <rect x="400" y="225" width="300" height="225" class="box node"/>
+  <rect x="735" y="225" width="300" height="225" class="box node"/>
+  <rect x="1070" y="225" width="275" height="225" class="box node"/>
+
+  <text x="550" y="265" text-anchor="middle" class="label">Node 1</text>
+  <text x="550" y="294" text-anchor="middle" class="small">Node 1 management address</text>
+  <text x="550" y="340" text-anchor="middle" class="small">control · network</text>
+  <text x="550" y="368" text-anchor="middle" class="small">compute</text>
+  <text x="550" y="413" text-anchor="middle" class="tiny">Ubuntu 24.04 · Kolla-Ansible</text>
+
+  <text x="885" y="265" text-anchor="middle" class="label">Node 2</text>
+  <text x="885" y="294" text-anchor="middle" class="small">Node 2 management address</text>
+  <text x="885" y="340" text-anchor="middle" class="small">control · network</text>
+  <text x="885" y="368" text-anchor="middle" class="small">compute</text>
+  <text x="885" y="413" text-anchor="middle" class="tiny">Ubuntu 24.04 · Kolla-Ansible</text>
+
+  <text x="1208" y="265" text-anchor="middle" class="label">Node 3</text>
+  <text x="1208" y="294" text-anchor="middle" class="small">Node 3 management address</text>
+  <text x="1208" y="340" text-anchor="middle" class="small">control · network</text>
+  <text x="1208" y="368" text-anchor="middle" class="small">compute</text>
+  <text x="1208" y="413" text-anchor="middle" class="tiny">Ubuntu 24.04 · Kolla-Ansible</text>
+
+  <rect x="55" y="545" width="300" height="95" class="box vip"/>
+  <text x="205" y="582" text-anchor="middle" class="label">Kolla API VIP</text>
+  <text x="205" y="613" text-anchor="middle" class="small">Reserved management-subnet IP</text>
+
+  <rect x="400" y="545" width="945" height="95" class="net"/>
+  <text x="872" y="582" text-anchor="middle" class="label">Neutron provider Layer-2 network</text>
+  <text x="872" y="613" text-anchor="middle" class="small">Shared provider switch · no host IP</text>
+
+  <path d="M550 450V520M885 450V520M1208 450V520M550 520H1208M1208 520V545" fill="none" stroke="#f59e0b" stroke-width="3"/>
+  <text x="700" y="710" text-anchor="middle" class="small">Provider L2 is isolated unless an upstream router and address plan are added.</text>
+  <text x="700" y="745" text-anchor="middle" class="tiny">For separate management, tunnel, and provider networks, add a third NIC per node.</text>
+  <text x="700" y="810" text-anchor="middle" class="tiny">Target topology only; perform the actual installation by following FULL-INSTALLATION-GUIDE.md.</text>
 </svg>
