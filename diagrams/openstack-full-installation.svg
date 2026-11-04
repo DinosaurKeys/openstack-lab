@@ -1,0 +1,205 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+<title id="title">OpenStack Lab — Full Installation Map</title>
+<desc id="desc">A privacy-safe architecture overview and one ordered thirteen-step Kolla-Ansible installation path.</desc>
+<defs>
+<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#dce5ef"/></pattern>
+<filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f2442" flood-opacity="0.08"/></filter>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" rx="0" fill="#edf3f9" stroke="none" stroke-width="1" />
+<rect x="0" y="0" width="1920" height="124" rx="0" fill="#102743" stroke="none" stroke-width="1" />
+<rect x="0" y="0" width="12" height="124" rx="0" fill="#22a6d5" stroke="none" stroke-width="1" />
+<text x="48" y="38" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#9bdcf5" text-anchor="start" letter-spacing="1.8px">OPENSTACK LAB</text>
+<text x="48" y="78" font-family="Inter, Aptos, Arial, sans-serif" font-size="33px" font-weight="800" fill="#ffffff" text-anchor="start" letter-spacing="0.6px">FULL INSTALLATION MAP</text>
+<text x="50" y="106" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="500" fill="#c8d7e7" text-anchor="start" letter-spacing="0px">Fresh Ubuntu  →  tested cloud  →  optional extensions</text>
+<rect x="1445" y="39" width="425" height="48" rx="24" fill="#e5f4fb" stroke="none" stroke-width="1" />
+<text x="1657" y="69" font-family="Inter, Aptos, Arial, sans-serif" font-size="16px" font-weight="800" fill="#12436a" text-anchor="middle" letter-spacing="0.2px">UBUNTU 24.04  ·  KOLLA-ANSIBLE 2026.2</text>
+<rect x="40" y="142" width="510" height="896" rx="20" fill="#ffffff" stroke="#d7e1ec" stroke-width="1.2" filter="url(#shadow)"/>
+<rect x="565" y="142" width="1315" height="896" rx="20" fill="#ffffff" stroke="#d7e1ec" stroke-width="1.2" filter="url(#shadow)"/>
+<rect x="40" y="142" width="510" height="896" rx="20" fill="url(#dots)" stroke="none" stroke-width="0" opacity="0.18"/>
+<text x="66" y="178" font-family="Inter, Aptos, Arial, sans-serif" font-size="21px" font-weight="800" fill="#17385d" text-anchor="start" letter-spacing="0.4px">TARGET ARCHITECTURE</text>
+<text x="66" y="201" font-family="Inter, Aptos, Arial, sans-serif" font-size="14px" font-weight="500" fill="#65788f" text-anchor="start" letter-spacing="0px">Separate deployment host · three multi-role nodes</text>
+<line x1="295" y1="279" x2="295" y2="304" stroke="#5c91c4" stroke-width="3" stroke-linecap="round"/>
+<line x1="137" y1="304" x2="453" y2="304" stroke="#5c91c4" stroke-width="3" stroke-linecap="round"/>
+<line x1="137" y1="304" x2="137" y2="322" stroke="#5c91c4" stroke-width="3" stroke-linecap="round"/>
+<circle cx="137" cy="304" r="4" fill="#2b78b7" stroke="none" stroke-width="1"/>
+<line x1="295" y1="304" x2="295" y2="322" stroke="#5c91c4" stroke-width="3" stroke-linecap="round"/>
+<circle cx="295" cy="304" r="4" fill="#2b78b7" stroke="none" stroke-width="1"/>
+<line x1="453" y1="304" x2="453" y2="322" stroke="#5c91c4" stroke-width="3" stroke-linecap="round"/>
+<circle cx="453" cy="304" r="4" fill="#2b78b7" stroke="none" stroke-width="1"/>
+<line x1="137" y1="481" x2="137" y2="533" stroke="#d59538" stroke-width="2.3" stroke-linecap="round" stroke-dasharray="6 5"/>
+<line x1="295" y1="481" x2="295" y2="533" stroke="#d59538" stroke-width="2.3" stroke-linecap="round" stroke-dasharray="6 5"/>
+<line x1="453" y1="481" x2="453" y2="533" stroke="#d59538" stroke-width="2.3" stroke-linecap="round" stroke-dasharray="6 5"/>
+<line x1="137" y1="533" x2="453" y2="533" stroke="#d59538" stroke-width="2.3" stroke-linecap="round" stroke-dasharray="6 5"/>
+<rect x="68" y="216" width="454" height="64" rx="14" fill="#eaf5ff" stroke="#b8d5ee" stroke-width="1.4" />
+<rect x="84" y="230" width="34" height="24" rx="4" fill="#174a75" stroke="none" stroke-width="1" />
+<rect x="88" y="234" width="26" height="16" rx="2" fill="#d7f0ff" stroke="none" stroke-width="1" />
+<line x1="80" y1="258" x2="122" y2="258" stroke="#174a75" stroke-width="3" stroke-linecap="round"/>
+<text x="135" y="243" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#183a5d" text-anchor="start" letter-spacing="0px">MANAGEMENT VM</text>
+<text x="135" y="265" font-family="Inter, Aptos, Arial, sans-serif" font-size="13px" font-weight="500" fill="#526a82" text-anchor="start" letter-spacing="0px">Deployment host only · SSH · Ansible · Kolla CLI</text>
+<rect x="67" y="322" width="140" height="160" rx="14" fill="#f8fbff" stroke="#bfd0e2" stroke-width="1.2" />
+<rect x="67" y="322" width="140" height="7" rx="4" fill="#2d7eb7" stroke="none" stroke-width="1" />
+<text x="137" y="350" font-family="Inter, Aptos, Arial, sans-serif" font-size="16px" font-weight="800" fill="#183a5d" text-anchor="middle" letter-spacing="0.5px">NODE 1</text>
+<circle cx="89" cy="372" r="4" fill="#2563eb" stroke="none" stroke-width="1"/>
+<text x="101" y="376" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">CONTROL</text>
+<circle cx="89" cy="398" r="4" fill="#0f766e" stroke="none" stroke-width="1"/>
+<text x="101" y="402" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">NETWORK</text>
+<circle cx="89" cy="424" r="4" fill="#7c3aed" stroke="none" stroke-width="1"/>
+<text x="101" y="428" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">COMPUTE</text>
+<text x="137" y="463" font-family="Inter, Aptos, Arial, sans-serif" font-size="10.5px" font-weight="700" fill="#60748a" text-anchor="middle" letter-spacing="0.1px">MGMT + PROVIDER NIC</text>
+<rect x="225" y="322" width="140" height="160" rx="14" fill="#f8fbff" stroke="#bfd0e2" stroke-width="1.2" />
+<rect x="225" y="322" width="140" height="7" rx="4" fill="#2d7eb7" stroke="none" stroke-width="1" />
+<text x="295" y="350" font-family="Inter, Aptos, Arial, sans-serif" font-size="16px" font-weight="800" fill="#183a5d" text-anchor="middle" letter-spacing="0.5px">NODE 2</text>
+<circle cx="247" cy="372" r="4" fill="#2563eb" stroke="none" stroke-width="1"/>
+<text x="259" y="376" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">CONTROL</text>
+<circle cx="247" cy="398" r="4" fill="#0f766e" stroke="none" stroke-width="1"/>
+<text x="259" y="402" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">NETWORK</text>
+<circle cx="247" cy="424" r="4" fill="#7c3aed" stroke="none" stroke-width="1"/>
+<text x="259" y="428" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">COMPUTE</text>
+<text x="295" y="463" font-family="Inter, Aptos, Arial, sans-serif" font-size="10.5px" font-weight="700" fill="#60748a" text-anchor="middle" letter-spacing="0.1px">MGMT + PROVIDER NIC</text>
+<rect x="383" y="322" width="140" height="160" rx="14" fill="#f8fbff" stroke="#bfd0e2" stroke-width="1.2" />
+<rect x="383" y="322" width="140" height="7" rx="4" fill="#2d7eb7" stroke="none" stroke-width="1" />
+<text x="453" y="350" font-family="Inter, Aptos, Arial, sans-serif" font-size="16px" font-weight="800" fill="#183a5d" text-anchor="middle" letter-spacing="0.5px">NODE 3</text>
+<circle cx="405" cy="372" r="4" fill="#2563eb" stroke="none" stroke-width="1"/>
+<text x="417" y="376" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">CONTROL</text>
+<circle cx="405" cy="398" r="4" fill="#0f766e" stroke="none" stroke-width="1"/>
+<text x="417" y="402" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">NETWORK</text>
+<circle cx="405" cy="424" r="4" fill="#7c3aed" stroke="none" stroke-width="1"/>
+<text x="417" y="428" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="700" fill="#334b65" text-anchor="start" letter-spacing="0.2px">COMPUTE</text>
+<text x="453" y="463" font-family="Inter, Aptos, Arial, sans-serif" font-size="10.5px" font-weight="700" fill="#60748a" text-anchor="middle" letter-spacing="0.1px">MGMT + PROVIDER NIC</text>
+<rect x="174" y="291" width="242" height="24" rx="12" fill="#e7f2fd" stroke="none" stroke-width="1" />
+<text x="295" y="307" font-family="Inter, Aptos, Arial, sans-serif" font-size="11px" font-weight="800" fill="#245b89" text-anchor="middle" letter-spacing="0.4px">MANAGEMENT / API NETWORK</text>
+<rect x="99" y="540" width="392" height="28" rx="14" fill="#fff4dc" stroke="#f0d29a" stroke-width="1" />
+<text x="295" y="559" font-family="Inter, Aptos, Arial, sans-serif" font-size="11.5px" font-weight="800" fill="#835c18" text-anchor="middle" letter-spacing="0.2px">PROVIDER L2  ·  NO HOST IP  ·  VERIFY CABLING</text>
+<rect x="68" y="586" width="454" height="70" rx="14" fill="#eef5ff" stroke="#c4d8ee" stroke-width="1.2" />
+<circle cx="96" cy="621" r="14" fill="#d7eaff" stroke="none" stroke-width="1"/>
+<rect x="90" y="617" width="12" height="10" rx="2" fill="none" stroke="#2872aa" stroke-width="2" />
+<path d="M92 617 C92 610 100 610 100 617" fill="none" stroke="#2872aa" stroke-width="2"/>
+<text x="122" y="615" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#1f4e79" text-anchor="start" letter-spacing="0px">INTERNAL API VIP</text>
+<text x="122" y="638" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="500" fill="#526a82" text-anchor="start" letter-spacing="0px">Reserved on management network · Keepalived / HAProxy</text>
+<rect x="68" y="676" width="454" height="334" rx="14" fill="#f5f8fc" stroke="#d8e2ec" stroke-width="1.1" />
+<text x="91" y="708" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#294662" text-anchor="start" letter-spacing="0.5px">NETWORK &amp; ROLE RULES</text>
+<circle cx="94" cy="738" r="11" fill="#e3edf7" stroke="none" stroke-width="1"/>
+<text x="94" y="742" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#35658c" text-anchor="middle" letter-spacing="0px">1</text>
+<text x="114" y="738" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="500" fill="#53697f" text-anchor="start">
+<tspan x="114" dy="0">All three nodes carry control, network, and compute roles.</tspan>
+</text>
+<circle cx="94" cy="786" r="11" fill="#e3edf7" stroke="none" stroke-width="1"/>
+<text x="94" y="790" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#35658c" text-anchor="middle" letter-spacing="0px">2</text>
+<text x="114" y="786" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="500" fill="#53697f" text-anchor="start">
+<tspan x="114" dy="0">Verify NIC identity and cable path before assigning provider L2.</tspan>
+</text>
+<circle cx="94" cy="834" r="11" fill="#e3edf7" stroke="none" stroke-width="1"/>
+<text x="94" y="838" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#35658c" text-anchor="middle" letter-spacing="0px">3</text>
+<text x="114" y="834" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="500" fill="#53697f" text-anchor="start">
+<tspan x="114" dy="0">Choose an unused VIP locally; no real address is shown.</tspan>
+</text>
+<circle cx="94" cy="882" r="11" fill="#e3edf7" stroke="none" stroke-width="1"/>
+<text x="94" y="886" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#35658c" text-anchor="middle" letter-spacing="0px">4</text>
+<text x="114" y="882" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="500" fill="#53697f" text-anchor="start">
+<tspan x="114" dy="0">Monitoring/storage hosts are selected only when enabling them.</tspan>
+</text>
+<circle cx="94" cy="930" r="11" fill="#e3edf7" stroke="none" stroke-width="1"/>
+<text x="94" y="934" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#35658c" text-anchor="middle" letter-spacing="0px">5</text>
+<text x="114" y="930" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="500" fill="#53697f" text-anchor="start">
+<tspan x="114" dy="0">Local Cinder LVM is not replicated high-availability storage.</tspan>
+</text>
+<text x="91" y="991" font-family="Inter, Aptos, Arial, sans-serif" font-size="11.5px" font-weight="700" fill="#35658c" text-anchor="start" letter-spacing="0px">Read the failing task · change one cause at a time</text>
+<text x="590" y="178" font-family="Inter, Aptos, Arial, sans-serif" font-size="21px" font-weight="800" fill="#17385d" text-anchor="start" letter-spacing="0.4px">ONE ORDERED INSTALLATION SEQUENCE</text>
+<text x="590" y="201" font-family="Inter, Aptos, Arial, sans-serif" font-size="14px" font-weight="500" fill="#65788f" text-anchor="start" letter-spacing="0px">Follow Step 1 through Step 13; extensions come after a tested core cloud.</text>
+<rect x="590" y="212" width="153" height="22" rx="11" fill="#e7f2fd" stroke="none" stroke-width="1" />
+<text x="666.5" y="227" font-family="Inter, Aptos, Arial, sans-serif" font-size="11px" font-weight="700" fill="#245b89" text-anchor="middle" letter-spacing="0.3px">STEPS 1–7  ·  PREPARE</text>
+<rect x="1230" y="212" width="230" height="22" rx="11" fill="#e8f5f1" stroke="none" stroke-width="1" />
+<text x="1345.0" y="227" font-family="Inter, Aptos, Arial, sans-serif" font-size="11px" font-weight="700" fill="#1b705e" text-anchor="middle" letter-spacing="0.3px">STEPS 8–13  ·  DEPLOY + EXTEND</text>
+<rect x="590" y="236" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="590" y="248" width="5" height="79" rx="3" fill="#2563eb" stroke="none" stroke-width="1" />
+<circle cx="621" cy="267" r="19" fill="#2563eb" stroke="none" stroke-width="1"/>
+<text x="621" y="273" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">1</text>
+<text x="652" y="267" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Install Ubuntu Server 24.04</text>
+<text x="652" y="297" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Management VM and all three nodes; protect any data disks.</text>
+<rect x="590" y="349" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="590" y="361" width="5" height="79" rx="3" fill="#0f766e" stroke="none" stroke-width="1" />
+<circle cx="621" cy="380" r="19" fill="#0f766e" stroke="none" stroke-width="1"/>
+<text x="621" y="386" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">2</text>
+<text x="652" y="380" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Install OpenSSH and key access</text>
+<text x="652" y="410" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Install the SSH server on nodes; connect from the management VM.</text>
+<rect x="590" y="462" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="590" y="474" width="5" height="79" rx="3" fill="#7c3aed" stroke="none" stroke-width="1" />
+<circle cx="621" cy="493" r="19" fill="#7c3aed" stroke="none" stroke-width="1"/>
+<text x="621" y="499" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">3</text>
+<text x="652" y="493" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Install Ansible + Kolla-Ansible</text>
+<text x="652" y="523" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Ansible 13–14 and stable/2026.2 in a dedicated Python venv.</text>
+<rect x="590" y="575" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="590" y="587" width="5" height="79" rx="3" fill="#d97706" stroke="none" stroke-width="1" />
+<circle cx="621" cy="606" r="19" fill="#d97706" stroke="none" stroke-width="1"/>
+<text x="621" y="612" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">4</text>
+<text x="652" y="606" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Configure host networking</text>
+<text x="652" y="636" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Verify NICs; set management/provider L2; reserve an unused VIP.</text>
+<rect x="590" y="688" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="590" y="700" width="5" height="79" rx="3" fill="#2563eb" stroke="none" stroke-width="1" />
+<circle cx="621" cy="719" r="19" fill="#2563eb" stroke="none" stroke-width="1"/>
+<text x="621" y="725" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">5</text>
+<text x="652" y="719" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Build the Kolla inventory</text>
+<text x="652" y="749" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">All nodes in control/network/compute; remove active sample hosts.</text>
+<rect x="590" y="801" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="590" y="813" width="5" height="79" rx="3" fill="#0f766e" stroke="none" stroke-width="1" />
+<circle cx="621" cy="832" r="19" fill="#0f766e" stroke="none" stroke-width="1"/>
+<text x="621" y="838" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">6</text>
+<text x="652" y="832" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Set hostnames and synchronize time</text>
+<text x="652" y="862" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Use consistent name resolution and synchronized clocks.</text>
+<rect x="590" y="914" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="590" y="926" width="5" height="79" rx="3" fill="#7c3aed" stroke="none" stroke-width="1" />
+<circle cx="621" cy="945" r="19" fill="#7c3aed" stroke="none" stroke-width="1"/>
+<text x="621" y="951" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">7</text>
+<text x="652" y="945" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Configure globals and secrets</text>
+<text x="652" y="975" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Set interfaces/VIP; generate passwords and keep them private.</text>
+<rect x="1230" y="236" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1230" y="248" width="5" height="79" rx="3" fill="#d97706" stroke="none" stroke-width="1" />
+<circle cx="1261" cy="267" r="19" fill="#d97706" stroke="none" stroke-width="1"/>
+<text x="1261" y="273" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">8</text>
+<text x="1292" y="267" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Bootstrap hosts and run prechecks</text>
+<text x="1292" y="297" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Let Kolla prepare hosts; fix failures instead of bypassing them.</text>
+<rect x="1230" y="349" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1230" y="361" width="5" height="79" rx="3" fill="#2563eb" stroke="none" stroke-width="1" />
+<circle cx="1261" cy="380" r="19" fill="#2563eb" stroke="none" stroke-width="1"/>
+<text x="1261" y="386" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">9</text>
+<text x="1292" y="380" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Deploy OpenStack and validate</text>
+<text x="1292" y="410" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Run deploy, then validate-config; preserve logs if a task fails.</text>
+<rect x="1230" y="462" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1230" y="474" width="5" height="79" rx="3" fill="#0f766e" stroke="none" stroke-width="1" />
+<circle cx="1261" cy="493" r="19" fill="#0f766e" stroke="none" stroke-width="1"/>
+<text x="1261" y="499" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">10</text>
+<text x="1292" y="493" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Configure CLI and smoke-test</text>
+<text x="1292" y="523" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Check token/services, then boot one small VM on a private network.</text>
+<rect x="1230" y="575" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1230" y="587" width="5" height="79" rx="3" fill="#d97706" stroke="none" stroke-width="1" />
+<circle cx="1261" cy="606" r="19" fill="#d97706" stroke="none" stroke-width="1"/>
+<text x="1261" y="612" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">11</text>
+<text x="1292" y="606" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Cinder storage</text>
+<text x="1292" y="636" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Choose a backend and safe storage device; local LVM is not HA.</text>
+<rect x="1761" y="589" width="75" height="21" rx="10" fill="#fff2d6" stroke="none" stroke-width="1" />
+<text x="1798.5" y="604" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#8b5b08" text-anchor="middle" letter-spacing="0.4px">OPTIONAL</text>
+<rect x="1230" y="688" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1230" y="700" width="5" height="79" rx="3" fill="#7c3aed" stroke="none" stroke-width="1" />
+<circle cx="1261" cy="719" r="19" fill="#7c3aed" stroke="none" stroke-width="1"/>
+<text x="1261" y="725" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">12</text>
+<text x="1292" y="719" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Terraform</text>
+<text x="1292" y="749" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Add only after the manual cloud test; protect application credentials.</text>
+<rect x="1761" y="702" width="75" height="21" rx="10" fill="#fff2d6" stroke="none" stroke-width="1" />
+<text x="1798.5" y="717" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#8b5b08" text-anchor="middle" letter-spacing="0.4px">OPTIONAL</text>
+<rect x="1230" y="801" width="620" height="103" rx="14" fill="#ffffff" stroke="#d6e1eb" stroke-width="1.1" filter="url(#shadow)"/>
+<rect x="1230" y="813" width="5" height="79" rx="3" fill="#0f766e" stroke="none" stroke-width="1" />
+<circle cx="1261" cy="832" r="19" fill="#0f766e" stroke="none" stroke-width="1"/>
+<text x="1261" y="838" font-family="Inter, Aptos, Arial, sans-serif" font-size="15px" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="0px">13</text>
+<text x="1292" y="832" font-family="Inter, Aptos, Arial, sans-serif" font-size="17px" font-weight="800" fill="#1c3552" text-anchor="start" letter-spacing="0px">Prometheus + Grafana</text>
+<text x="1292" y="862" font-family="Inter, Aptos, Arial, sans-serif" font-size="13.5px" font-weight="500" fill="#5b6f84" text-anchor="start" letter-spacing="0px">Select real monitoring hosts, then enable after the core cloud is stable.</text>
+<rect x="1761" y="815" width="75" height="21" rx="10" fill="#fff2d6" stroke="none" stroke-width="1" />
+<text x="1798.5" y="830" font-family="Inter, Aptos, Arial, sans-serif" font-size="10px" font-weight="800" fill="#8b5b08" text-anchor="middle" letter-spacing="0.4px">OPTIONAL</text>
+<rect x="1230" y="925" width="620" height="86" rx="14" fill="#fff8e8" stroke="#f0d79c" stroke-width="1.1" />
+<text x="1250" y="951" font-family="Inter, Aptos, Arial, sans-serif" font-size="12px" font-weight="800" fill="#825b18" text-anchor="start" letter-spacing="0.6px">DEPLOYMENT GATE</text>
+<text x="1250" y="974" font-family="Inter, Aptos, Arial, sans-serif" font-size="12.5px" font-weight="500" fill="#695a3b" text-anchor="start">
+<tspan x="1250" dy="0">Kolla prechecks are required deployment gates—not a replacement</tspan>
+<tspan x="1250" dy="17">for installing Ubuntu, SSH, Ansible, and Kolla-Ansible.</tspan>
+</text>
+<text x="42" y="1066" font-family="Inter, Aptos, Arial, sans-serif" font-size="12px" font-weight="600" fill="#62768a" text-anchor="start" letter-spacing="0px">REVIEW COPY  ·  Generic labels only  ·  Companion to the FULL installation guide</text>
+<text x="1878" y="1066" font-family="Inter, Aptos, Arial, sans-serif" font-size="12px" font-weight="700" fill="#62768a" text-anchor="end" letter-spacing="0px">16:9</text>
+</svg>

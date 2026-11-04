@@ -4,6 +4,10 @@ This is the canonical, from-scratch installation procedure for the lab. It is no
 
 Follow the numbered steps in order. The deployment method is Kolla-Ansible, installed in a Python virtual environment on a separate management VM. The pinned baseline is Ubuntu Server 24.04 LTS and Kolla-Ansible `stable/2026.2`; do not mix commands, container images, or constraints from another OpenStack series.
 
+[![OpenStack lab architecture and 13-step installation map](../diagrams/openstack-full-installation.svg)](../diagrams/openstack-full-installation.svg)
+
+_At-a-glance map only. The numbered instructions below are the authoritative steps and commands; optional Steps 11–13 follow a tested core cloud._
+
 Official references used by this procedure:
 
 - [Kolla-Ansible 2026.2 Quickstart](https://docs.openstack.org/kolla-ansible/2026.2/user/quickstart.html)

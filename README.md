@@ -24,6 +24,10 @@ This repository documents a from-scratch installation using Ubuntu Server 24.04 
 
 The target hosts are a small learning environment, not production sizing. Confirm CPU, memory, disk, and network capacity against the Kolla-Ansible support matrix before deployment.
 
+[![OpenStack lab architecture and 13-step full-installation map](diagrams/openstack-full-installation.svg)](diagrams/openstack-full-installation.svg)
+
+_Visual overview only. Follow the [Full Installation Guide](docs/FULL-INSTALLATION-GUIDE.md) for the authoritative procedure and commands._
+
 ## Start here
 
 1. Install Ubuntu Server 24.04 LTS on the management VM and all three nodes.
@@ -48,6 +52,7 @@ The target hosts are a small learning environment, not production sizing. Confir
 | `docs/AUTOMATION-APPROACH.md` | Safe automation and troubleshooting conventions |
 | `docs/ANNEX-GITHUB-AUTH.md` | GitHub SSH authentication and safe push reminder |
 | `diagrams/openstack-lab-architecture.svg` | Target topology diagram |
+| `diagrams/openstack-full-installation.svg` | Privacy-safe architecture and ordered installation overview |
 | `ansible/ansible.cfg` | Project Ansible defaults |
 
 ## Safety
