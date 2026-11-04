@@ -13,18 +13,20 @@
 
 > This is a learning lab, not a production installer. The scripts are intentionally read-only: they inspect and validate, but do not reconfigure networking, erase disks, or install OpenStack.
 
-[Start with the guide](docs/INTENSIVE-GUIDE.md) · [Architecture](docs/architecture.md) · [GitHub authentication annex](docs/ANNEX-GITHUB-AUTH.md) · [Scripts](scripts/)
+[Start with the guide](docs/INTENSIVE-GUIDE.md) · [Architecture](docs/architecture.md) · [Automation approach](docs/AUTOMATION-APPROACH.md) · [GitHub authentication annex](docs/ANNEX-GITHUB-AUTH.md) · [Scripts](scripts/)
 
 ## At a glance
 
-| Role | Address | Responsibility |
+| System | Address | Configured roles |
 |:--|:--|:--|
-| Management VM | Separate, unique address | Git and Ansible |
-| Controller | `192.168.0.200` | Identity, image, control plane |
-| Network | `192.168.0.201` | Neutron networking |
-| Compute | `192.168.0.202` | Nova compute / KVM |
+| Management VM | Separate, unique address | Git, Ansible, operator tools |
+| Node 1 | `192.168.0.200` | Controller + network + compute; part of HA cluster |
+| Node 2 | `192.168.0.201` | Controller + network + compute; part of HA cluster |
+| Node 3 | `192.168.0.202` | Controller + network + compute; part of HA cluster |
 
-Each physical node has 16 GB RAM, a 4-core Intel i5-6500T, and a USB NIC intended for private connectivity. **The management VM needs its own unique address**—do not overlap it with a node address.
+Per the lab owner, all three nodes are already configured for HA and each runs controller, network, and compute roles. The learning sequence below studies those layers; it does not imply a single-node role assignment.
+
+Each physical node has 16 GB RAM and a 4-core Intel i5-6500T. The actual role of each USB NIC must be verified from the current configuration. **The management VM needs its own unique address**—do not overlap it with a node address.
 
 ![OpenStack lab architecture](diagrams/openstack-lab-architecture.svg)
 
@@ -45,15 +47,23 @@ bash scripts/01-verify-ssh-ansible.sh
 
 The first SSH connection may ask you to verify a host key. Confirm it belongs to the intended node. The repository does not store SSH passwords or private keys.
 
-## Learning path
+## Learning sequence
 
-```text
-Linux & recovery → SSH/Ansible → discover NICs and disks → networking & time
-                   → controller → network → compute → optional storage
-                   → failure testing → HA → Terraform → monitoring
-```
+1. Linux and recovery basics
+2. SSH and Ansible
+3. Discover interfaces and storage
+4. Static networking
+5. Time synchronization
+6. Controller
+7. Network node
+8. Compute node
+9. Cinder
+10. Failure testing
+11. HA/VIP — verify the existing configuration
+12. Terraform
+13. Grafana
 
-Do not skip discovery or jump to HA. Complete each phase gate and resume from the first failed check—not from a reinstall. See the [intensive guide](docs/INTENSIVE-GUIDE.md) for the full walkthrough.
+All three nodes are already reported to run controller, network, and compute roles in the HA cluster. These phase names describe what to learn and inspect, not a plan to assign one role per node or add HA later. See the [intensive guide](docs/INTENSIVE-GUIDE.md) for the walkthrough and [automation approach](docs/AUTOMATION-APPROACH.md) for future non-interactive checks and troubleshooting.
 
 ## Repository map
 
@@ -61,6 +71,7 @@ Do not skip discovery or jump to HA. Complete each phase gate and resume from th
 |:--|:--|
 | `docs/INTENSIVE-GUIDE.md` | Detailed phases, checks, and recovery guidance |
 | `docs/architecture.md` | Network roles, traffic flows, and Mermaid build diagram |
+| `docs/AUTOMATION-APPROACH.md` | Non-interactive checks, reporting, and safe troubleshooting design |
 | `docs/ANNEX-GITHUB-AUTH.md` | SSH authentication and safe Git push reminder |
 | `diagrams/openstack-lab-architecture.svg` | Standalone topology diagram |
 | `inventory/hosts.yml` | Ansible host inventory; review before use |
@@ -72,33 +83,26 @@ Do not skip discovery or jump to HA. Complete each phase gate and resume from th
 - Never guess a NIC, gateway, subnet, or disk identity.
 - Do not apply network changes without console or other recovery access.
 - Existing LVM metadata means a disk may already be in use; do not run `pvcreate` as a tutorial shortcut.
-- A VIP alone is not high availability; the first target is a working, non-HA lab.
+- A VIP alone is not proof of end-to-end HA; verify the existing HA behavior across controller, network, compute, and storage paths.
 - Keep local discovery output under `evidence/`; it is ignored by Git because it may contain private infrastructure details.
-
-## Deployment approach
-
-Choose an OpenStack deployment method only after confirming the host OS, release, virtualization support, storage, and network design. The [official installation guide](https://docs.openstack.org/install-guide/) is a manual learning path; [OpenStack-Ansible](https://docs.openstack.org/project-deploy-guide/openstack-ansible/latest/) is a possible later automation path. Do not mix commands from different deployment projects or releases.
 
 ## License
 
 No license file is currently included. Until one is added, others do not have an explicit license grant to reuse, modify, or redistribute this repository.
 
-## Phase gates
+## Read-only checks
 
-A phase is complete only when its check passes and its evidence is saved.
+The current scripts provide local preflight, SSH/Ansible connectivity, interface/storage discovery, and time/host checks:
 
-- Phase 0: `scripts/00-local-preflight.sh`
-- Phase 1: `scripts/01-verify-ssh-ansible.sh`
-- Phase 2: inspect with `scripts/02-discover-nics-and-disks.sh`; apply networking manually only after review
-- Phase 3: `scripts/03-check-time-and-hosts.sh`
-- Phase 4 onward: choose deployment documentation after confirming the OS and release
+- `scripts/00-local-preflight.sh`
+- `scripts/01-verify-ssh-ansible.sh`
+- `scripts/02-discover-nics-and-disks.sh`
+- `scripts/03-check-time-and-hosts.sh`
+
+These checks do not apply network, storage, or OpenStack changes. See [automation approach](docs/AUTOMATION-APPROACH.md) for how future node-operation scripts should handle authentication, partial failures, reports, and approval boundaries.
 
 ## Recovery rule
 
 When something fails, keep the current files, record the exact command and error locally under ignored `evidence/`, run a read-only diagnostic, change one thing, and rerun the failed phase check. Do not reinstall or wipe a node as a first response.
-
-## License
-
-No license file is currently included. Until one is added, others do not have an explicit license grant to reuse, modify, or redistribute this repository.
 
 Do not commit private keys, passwords, tokens, generated secret-bearing inventory, or local evidence.

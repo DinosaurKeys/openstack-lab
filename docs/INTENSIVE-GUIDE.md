@@ -4,20 +4,22 @@ This guide is the shared operating manual for this lab. It is written for a VM e
 
 The rule is: understand one layer, verify it, save the evidence, then move forward.
 
-## 1. Lab identity and assumptions
+## 1. Lab identity and confirmed role model
 
 ### Physical layout
 
-| System | Address | Planned role | Important note |
+| System | Address | Configured roles | Important note |
 |---|---:|---|---|
 | Management VM | must be unique | Hermes, Git, Ansible | must not reuse a node address |
-| Node 1 | `192.168.0.200` | Controller | APIs and control-plane services |
-| Node 2 | `192.168.0.201` | Network | Neutron and virtual networking |
-| Node 3 | `192.168.0.202` | Compute | KVM/libvirt and Nova compute |
+| Node 1 | `192.168.0.200` | Controller + network + compute; HA member |
+| Node 2 | `192.168.0.201` | Controller + network + compute; HA member |
+| Node 3 | `192.168.0.202` | Controller + network + compute; HA member |
 
-Each physical node has 16 GB RAM, four CPU cores, a normal management interface, and a USB NIC intended for private/internal connectivity.
+Per the lab owner, all three nodes have controller, network, and compute roles and are configured for HA. The phase names below are learning topics, not a proposal to split roles across nodes or deploy a new single-controller cloud. The exact HA implementation and current service state must still be read from the nodes before troubleshooting or failover actions.
 
-The current discovery evidence shows:
+Each physical node has 16 GB RAM and four CPU cores. It has a management interface and USB NIC hardware; discover each NIC's actual current role rather than assuming the USB NIC is private/internal.
+
+An earlier discovery snapshot recorded the following observations; they have not been freshly verified as part of this documentation update. Treat them as historical until phase 3 is rerun:
 
 - management interface: `enp0s31f6`
 - USB NIC on Node 1: `enx00e04c2c1678`
@@ -31,7 +33,7 @@ Do not assume these names will remain unchanged after hardware changes. Re-run d
 
 ## 2. What we are building
 
-The first milestone is not HA. It is a small, understandable OpenStack cloud that can launch one test instance.
+The existing three-node HA cluster is the environment we are learning and operating. The sequence below focuses on understanding and validating its components, then testing recovery safely; it is not a plan to install a new non-HA cloud.
 
 ```text
                               User / Operator
@@ -47,12 +49,10 @@ The first milestone is not HA. It is a small, understandable OpenStack cloud tha
 +------+-------+               +-----+------+                +-----+------+
 | Node 1       |               | Node 2     |                | Node 3     |
 | .200         |               | .201       |                | .202       |
-| Controller   |               | Network    |                | Compute    |
-|              |               |            |                |            |
-| Keystone     |               | Neutron    |                | Nova       |
-| Glance       |               | DHCP/L3    |                | libvirt    |
-| Placement    |               | OVS/bridge |                | KVM        |
-| Nova API     |               |            |                |            |
+| Controller   |               | Controller |                | Controller |
+| Network      |               | Network    |                | Network    |
+| Compute + HA |               | Compute+HA |                | Compute+HA |
+| All roles are present on all three nodes; discover exact service placement. |
 +------+-------+               +-----+------+                +-----+------+
        |                             |                             |
        +=============================+=============================+
@@ -95,7 +95,7 @@ When a command fails, the lab is not lost. The failure is a location marker.
 
 1. Stop at the first failed command.
 2. Save the complete command and output under `evidence/`.
-3. Identify the phase: Linux, SSH, network, time, controller, network node, compute, storage, or application.
+3. Identify the phase: Linux, SSH, network, time, controller services, network services, compute services, storage, HA, or application.
 4. Run a read-only diagnostic for that phase.
 5. Change one thing only.
 6. Re-run the phase check before touching later phases.
@@ -259,9 +259,9 @@ lsblk                disks, filesystems, mounts, LVM
 
 ### Current lab finding
 
-The USB NICs are visible but down. This means the physical/internal network must be checked before creating an internal subnet.
+The earlier snapshot recorded USB NICs as visible but down. Re-discover all links, bridges, routes, and provider-network configuration before deciding their current purpose or changing network settings.
 
-The storage output already shows an LVM-backed Cinder pool. Therefore:
+That earlier storage output showed an LVM-backed Cinder pool. Confirm current storage state before relying on it. Until verified:
 
 - do not run `pvcreate`
 - do not run `vgcreate`
@@ -272,39 +272,30 @@ The storage output already shows an LVM-backed Cinder pool. Therefore:
 
 ### Goal
 
-Give each host stable, predictable addresses while preserving SSH access.
+Verify the existing address, route, DNS, bridge, and VLAN configuration while preserving SSH/API access. Create a reviewed change plan only if discovery shows a real problem; do not reconfigure a working HA cluster simply to follow a tutorial example.
 
-### Proposed network design
+### Network discovery and change plan
 
 ```text
-Management LAN: 192.168.0.0/24
-  Node 1: 192.168.0.200/24
-  Node 2: 192.168.0.201/24
-  Node 3: 192.168.0.202/24
-  Gateway: existing LAN gateway, normally 192.168.0.1
-
-Private USB network: choose an unused subnet after checking the LAN
-  Example only: 192.168.10.0/24
-  Node 1: 192.168.10.2/24
-  Node 2: 192.168.10.3/24
-  Node 3: 192.168.10.4/24
-  No default gateway on this isolated interface
+Management/API network: record actual addresses, routes, gateway, DNS, and API endpoint path.
+Internal/tunnel network: identify configured interfaces, bridges, VLANs, and overlay.
+Provider/external network: identify the actual uplink and its relationship to the switch/LAN.
+Do not create a second subnet or move a default route based on this example alone.
 ```
 
-The example private subnet is not automatically correct. Confirm it does not overlap with your LAN, VPN, Docker, libvirt, or Wi-Fi networks.
+Do not assume a USB NIC is an isolated underlay or that any example subnet is correct. Confirm current cabling and configuration, and check for overlap with LAN, VPN, Docker, libvirt, and Wi-Fi networks.
 
 ### Safe change process
 
-1. Confirm a local console or another recovery path.
-2. Confirm the USB cables/switch path.
-3. Confirm the exact USB NIC name on each node.
-4. Create a candidate Netplan file.
-5. Check YAML syntax and routes.
-6. Apply one node at a time.
-7. Test SSH immediately.
-8. Save the result.
+1. Collect interface, address, route, DNS, bridge, and VLAN state from all nodes.
+2. Compare management reachability and the actual OpenStack network configuration.
+3. If a change is necessary, identify its exact scope and expected failover impact.
+4. Confirm a local console or other recovery path and obtain approval before applying it.
+5. Validate the candidate configuration and rollback procedure before a one-node-at-a-time change.
+6. Recheck SSH, API reachability, cluster health, and workload networking after each change.
+7. Save redacted evidence and the result.
 
-Do not configure a default route on the isolated USB network. Keep the default route on the management interface unless the final design explicitly requires otherwise.
+Do not add or move a default route based on an assumed interface role. Confirm the live routing design and failover implications first.
 
 ## 8. Phase 5 — Time synchronization
 
@@ -332,11 +323,11 @@ Completion criteria:
 - hostnames resolve consistently
 - all nodes show the expected UTC time
 
-## 9. Phase 6 — Controller bootstrap
+## 9. Phase 6 — Controller
 
 ### Goal
 
-Build and understand the control plane on Node 1 before distributing complexity.
+Understand and inspect the controller services across the existing HA cluster. Do not assume Node 1 is the only controller or bootstrap a new control plane. First discover where APIs, databases, message queues, and supporting services actually run and how they are monitored.
 
 ### Services and responsibilities
 
@@ -380,7 +371,7 @@ The controller phase is complete only when you can verify:
 
 ### Goal
 
-Understand how Neutron turns a logical network into Linux/OVS datapath state.
+Understand how the existing Neutron/network services turn a logical network into Linux/OVS datapath state across the cluster. Identify which agents run on which nodes from live observations rather than assuming a dedicated network node.
 
 Conceptual flow:
 
@@ -407,13 +398,13 @@ Completion criteria:
 - a tenant network can be created
 - a subnet can be created
 - DHCP supplies an address to a test port
-- the network node can be diagnosed using namespaces and bridge state
+- network agents, namespaces, bridges, and HA router state can be diagnosed on all relevant nodes
 
 ## 11. Phase 8 — Compute node
 
 ### Goal
 
-Launch a guest on Node 3 and trace its complete path.
+Understand the compute service on each node and trace a test guest's scheduling, network, and storage path. Do not assume Node 3 is the only hypervisor; discover the actual placement and capacity first.
 
 First verify hardware virtualization:
 
@@ -470,15 +461,15 @@ Completion criteria:
 
 Do not call the lab reliable until failure behavior is observed.
 
-Start with reversible tests:
+Start with reversible, explicitly scoped tests only after reviewing current quorum, workload placement, and recovery access. Because all three nodes run controller, network, and compute roles, do not assume a “network node” or “compute node” is a dedicated failure domain. Get approval before disrupting a node or service.
 
 ```text
-1. Restart one service.
-2. Stop and start one agent.
-3. Reboot the compute node while no important workload runs.
-4. Reboot the network node after confirming console access.
-5. Temporarily disconnect the USB NIC, then restore it.
-6. Verify services return and test instance state is understood.
+1. Observe one service/agent and confirm which HA peers and workloads depend on it.
+2. Test a single, approved service/agent failure scenario.
+3. Use planned maintenance for a node-level test; all three nodes carry multiple roles.
+4. Test a network-link interruption only if its real use and recovery path are known.
+5. Verify API access, quorum, workload placement, guest connectivity, and storage behavior.
+6. Restore the original state and record the observed recovery.
 ```
 
 For each test record:
@@ -489,11 +480,11 @@ For each test record:
 - how long recovery took
 - what manual action was needed
 
-## 14. Phase 11 — HA/VIP
+## 14. Phase 11 — Existing HA/VIP verification
 
 ### Goal
 
-Only after the single-controller lab works, design a real control-plane failure domain.
+The owner reports that all three nodes are already configured for HA. This phase is to discover, document, and validate that configuration—not to add HA later or create an unplanned VIP.
 
 A VIP by itself is not HA. A resilient design needs coordinated handling for:
 
@@ -505,7 +496,7 @@ A VIP by itself is not HA. A resilient design needs coordinated handling for:
 - network agents
 - monitoring and fencing
 
-With the current three-node role plan, Node 1 is the only controller. Keepalived can move an address, but it does not replicate Keystone, Nova, the database, or the message queue. Treat HA as a separate architecture project, not a switch to turn on.
+Before any failure test, identify the real VIP owner mechanism, API proxy, database/quorum behavior, messaging topology, network-agent/router state, storage guarantees, and recovery procedure. A VIP move alone does not prove the service or data path survived. Run one scoped, approved, reversible test at a time and check user-visible API and workload behavior as well as process state.
 
 ## 15. Phase 12 — Terraform
 
@@ -569,18 +560,19 @@ Validate the Prometheus target directly before importing dashboards. A dashboard
 [ ] I did not commit secrets.
 ```
 
-## 18. Definition of done for the first milestone
+## 18. Definition of done for this learning sequence
 
 The first milestone is complete when:
 
-- Ansible reaches all three nodes.
+- Ansible reaches all three nodes and can collect independent per-node observations.
 - Management and internal network roles are understood.
+- Controller, network, and compute services are mapped across all three nodes.
 - All nodes have synchronized time.
 - Controller APIs respond.
 - Network services create a usable tenant network.
 - Compute launches a test instance.
 - Storage behavior is documented and tested if enabled.
-- At least one failure/recovery exercise is recorded.
+- The existing HA mechanisms and their limits are documented, and an approved failure/recovery exercise is recorded.
 - The repository contains enough evidence to resume without reinstalling.
 
-Only then should we begin HA, Terraform, or Grafana.
+The existing HA mechanisms, Terraform, and Grafana should be studied in sequence after the preceding checks and failure/recovery evidence are complete; HA is already configured, not a later build step.

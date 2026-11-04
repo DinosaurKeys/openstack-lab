@@ -1,15 +1,19 @@
 # Lab architecture and flow
 
-## Role assignment for the first working lab
+## Current lab role model
 
-The first target is a functional, non-HA lab:
+Per the lab owner, the cluster is already configured for HA, and **each of the three nodes runs controller, network, and compute roles**. The phase names in the learning sequence are topics to inspect and understand, not exclusive node assignments.
 
-- Controller: Node 1 (`192.168.0.200`)
-- Network: Node 2 (`192.168.0.201`)
-- Compute: Node 3 (`192.168.0.202`)
-- Management VM: separate address, runs Ansible only
+| Node | Management address | Roles |
+|---|---|---|
+| Node 1 | `192.168.0.200` | Controller + network + compute; HA member |
+| Node 2 | `192.168.0.201` | Controller + network + compute; HA member |
+| Node 3 | `192.168.0.202` | Controller + network + compute; HA member |
+| Management VM | Separate unique address | Git, Ansible, operator tools |
 
-The USB NIC is reserved for a private node-to-node network. Its actual Linux name must be discovered on each host; it may be `enx...`, `eth1`, or another name.
+The exact HA mechanisms, service placement, VIPs, database/message-queue topology, and storage replication must be discovered from the live configuration. Do not infer those details from the word “HA.”
+
+Discover every interface, route, bridge, and VLAN on each host before describing or changing network roles. Do not assume the USB NIC is an isolated private network; confirm its cabling and current use from live state.
 
 ## High-level diagram
 
@@ -17,16 +21,20 @@ The USB NIC is reserved for a private node-to-node network. Its actual Linux nam
                          Management VM
                     Hermes + Git + Ansible
                               |
-                 management LAN / SSH / API
+                   SSH / API / management LAN
        +----------------------+----------------------+
        |                      |                      |
-  Node 1 .200             Node 2 .201             Node 3 .202
-  Controller              Network                  Compute
-  Keystone                Neutron agents           Nova-compute
-  Glance                  OVS/Linux bridge         KVM/libvirt
-  Placement               DHCP/L3                  Cinder later
+ Node 1 .200              Node 2 .201              Node 3 .202
+ Controller               Controller               Controller
+ Network                  Network                  Network
+ Compute                  Compute                  Compute
+ HA member                HA member                HA member
        |                      |                      |
-       +========= USB NIC private/internal network =========+
+       +========= internal / tenant networking =========+
+
+Controller, network, and compute roles are present across all three nodes.
+The diagram is conceptual; exact service placement and HA mechanisms must
+be discovered from the live cluster before operating it.
 ```
 
 ## Low-level traffic picture
@@ -36,48 +44,49 @@ Client/admin
     |
     | management LAN: SSH, Ansible, OpenStack APIs
     v
-[Controller .200]
-    | Keystone authentication
-    | Nova scheduling/API
-    | Glance images
-    | Placement resources
-    |
-    +---- internal RPC/database traffic ----+
-    |                                       |
-[Network .201]                         [Compute .202]
- Neutron server/agents                  nova-compute
- OVS bridges                            libvirt/KVM
- DHCP/L3                                tenant instances
-    |
-    +---- external/provider bridge (later; exact NIC is site-specific)
+        +------------------------------+
+        | 3-node service cluster       |
+        |                              |
+        | Controller APIs / DB / MQ    |
+        | Network agents / bridges     |
+        | Compute / hypervisors        |
+        |                              |
+        | all roles span nodes 1-3     |
+        +------------------------------+
+             |                  |
+       tenant/provider      guest workloads
+       network paths       and storage paths
+
+Exact service placement, API VIP path, and network/storage paths are to be
+observed; this picture is conceptual, not a deployment configuration.
 ```
 
 ## Build flow
 
 ```mermaid
 flowchart TD
-  A[0. Learn Linux + protect recovery path] --> B[1. SSH keys + Ansible ping]
-  B --> C[2. Discover NICs, routes, disks]
-  C --> D[3. Static IP plan + chrony]
-  D --> E{All phase checks pass?}
-  E -- no --> F[Record evidence and fix one cause]
-  F --> E
-  E -- yes --> G[4. Controller-only OpenStack]
-  G --> H[5. Add network node]
-  H --> I[6. Add compute node]
-  I --> J[7. Optional Cinder with dedicated disk]
-  J --> K[8. Failure/recovery tests]
-  K --> L[9. HA/VIP design]
-  L --> M[10. Terraform]
-  M --> N[11. Prometheus/Grafana]
+  A[1. Linux and recovery basics] --> B[2. SSH and Ansible]
+  B --> C[3. Discover interfaces and storage]
+  C --> D[4. Static networking]
+  D --> E[5. Time synchronization]
+  E --> F[6. Controller]
+  F --> G[7. Network node]
+  G --> H[8. Compute node]
+  H --> I[9. Cinder]
+  I --> J[10. Failure testing]
+  J --> K[11. HA/VIP: verify existing configuration]
+  K --> L[12. Terraform]
+  L --> M[13. Grafana]
+  C -. collect facts first .-> N[Read-only checks, per-node results]
+  N -. diagnose only after evidence .-> J
 ```
 
 ## The three networks to understand
 
-1. Management/API network: existing LAN, used for SSH and OpenStack API access.
-2. Internal/tunnel network: USB NIC, used for node-to-node service and tenant traffic as designed.
-3. External/provider network: optional separate path for floating IPs. Do not invent this from the USB NIC until the physical wiring and switch/router behavior are known.
+1. Management/API path: confirm from the actual node interfaces, routes, and API endpoints.
+2. Internal/tunnel path: identify the configured overlay/underlay and its interfaces from live state.
+3. External/provider path: inspect the existing bridge, NIC, VLAN, and upstream connectivity. Do not assume the USB NIC's purpose from its form factor.
 
-## HA warning
+## HA verification boundary
 
-A VIP alone is not HA. A resilient control plane also needs replicated databases, message queues, API services, storage, and tested failover. Keep the first deployment single-controller and learn the services before adding HA complexity.
+This lab is not at the “add HA later” stage: the owner reports that HA is already configured across all three nodes. The HA phase therefore means inspect and validate the existing design, test only approved failure scenarios, and document recovery—not build a separate VIP on top of a single-controller design. A VIP alone is not proof of end-to-end HA; verify the actual API, database, messaging, network, compute, and storage behavior independently.
