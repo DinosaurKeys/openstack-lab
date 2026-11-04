@@ -1,8 +1,8 @@
 # Lab architecture and flow
 
-## Current lab role model
+## Owner-reported lab role model
 
-Per the lab owner, the cluster is already configured for HA, and **each of the three nodes runs controller, network, and compute roles**. The phase names in the learning sequence are topics to inspect and understand, not exclusive node assignments.
+Per the lab owner, the cluster is configured for HA, and **each of the three nodes is assigned controller, network, and compute roles**. These are reported roles; current service placement and HA mechanisms have not yet been independently verified. Learning-step names are topics to inspect, not exclusive node assignments.
 
 | Node | Management address | Roles |
 |---|---|---|
@@ -61,25 +61,9 @@ Exact service placement, API VIP path, and network/storage paths are to be
 observed; this picture is conceptual, not a deployment configuration.
 ```
 
-## Build flow
+## Ordered learning guide
 
-```mermaid
-flowchart TD
-  A[1. Linux and recovery basics] --> B[2. SSH and Ansible]
-  B --> C[3. Discover interfaces and storage]
-  C --> D[4. Static networking]
-  D --> E[5. Time synchronization]
-  E --> F[6. Controller]
-  F --> G[7. Network node]
-  G --> H[8. Compute node]
-  H --> I[9. Cinder]
-  I --> J[10. Failure testing]
-  J --> K[11. HA/VIP: verify existing configuration]
-  K --> L[12. Terraform]
-  L --> M[13. Grafana]
-  C -. collect facts first .-> N[Read-only checks, per-node results]
-  N -. diagnose only after evidence .-> J
-```
+The ordered 13-step sequence lives only in the [intensive guide](INTENSIVE-GUIDE.md#the-13-learning-steps). This page focuses on topology and traffic flow rather than repeating that sequence.
 
 ## The three networks to understand
 
@@ -89,4 +73,4 @@ flowchart TD
 
 ## HA verification boundary
 
-This lab is not at the “add HA later” stage: the owner reports that HA is already configured across all three nodes. The HA phase therefore means inspect and validate the existing design, test only approved failure scenarios, and document recovery—not build a separate VIP on top of a single-controller design. A VIP alone is not proof of end-to-end HA; verify the actual API, database, messaging, network, compute, and storage behavior independently.
+This lab is not at the “add HA later” stage: the owner reports that HA is already configured across all three nodes. Step 11 therefore means inspect and validate the existing design, test only approved failure scenarios, and document recovery—not build a separate VIP on top of a single-controller design. A VIP alone is not proof of end-to-end HA; verify the actual API, database, messaging, network, compute, and storage behavior independently.

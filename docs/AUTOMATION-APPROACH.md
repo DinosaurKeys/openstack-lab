@@ -41,6 +41,6 @@ Use read-only checks by default. If a mutating command is later justified, place
 
 ## Operational sequence
 
-Keep the learning order in the repository's 13 phases. In particular, phase 11 is verification and controlled testing of the existing HA/VIP design: the lab owner reports all three nodes already have controller, network, and compute roles and are configured for HA. It is not an instruction to create a new cluster or add an unplanned VIP.
+Keep the learning order in the guide's 13 steps. In particular, Step 11 is verification and controlled testing of the existing HA/VIP design: the lab owner reports all three nodes already have controller, network, and compute roles and are configured for HA. It is not an instruction to create a new cluster or add an unplanned VIP.
 
 When troubleshooting, first collect independent, read-only facts from all three nodes and the relevant OpenStack APIs. Correlate symptoms before choosing a change. Never equate “SSH failed” with “node is down,” “one service is up” with “HA works,” or “API says ACTIVE” with proven guest traffic/data integrity.

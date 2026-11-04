@@ -6,7 +6,7 @@ cd "$ROOT"
 mkdir -p evidence
 OUT="evidence/time-hosts-$(date -u +%Y%m%dT%H%M%SZ).txt"
 {
-  echo '== Phase 2/3 check: hostname, resolver, time sync =='
+  echo '== Step 5 check: hostname, resolver, time sync =='
   date -u
   ansible openstack_nodes -m shell -a 'hostnamectl --static; echo "-- resolv.conf --"; resolvectl status 2>/dev/null || cat /etc/resolv.conf; echo "-- timedatectl --"; timedatectl show -p NTPSynchronized -p TimeUSec 2>/dev/null || true; echo "-- chrony --"; chronyc tracking 2>/dev/null || true'
 } | tee "$OUT"

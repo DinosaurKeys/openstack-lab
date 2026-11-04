@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
   <title id="title">OpenStack three-node HA learning lab</title>
-  <desc id="desc">Separate management VM connects to three OpenStack nodes. Each node runs controller, network, and compute roles and is reported by the lab owner to be part of the existing HA configuration. Exact HA mechanisms require live verification.</desc>
+  <desc id="desc">Separate management VM connects to three nodes with controller, network, and compute roles reported by the lab owner. Live service placement and exact HA mechanisms remain to be verified.</desc>
   <defs>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width="1"/></pattern>
     <style>
@@ -12,8 +12,8 @@
     </style>
   </defs>
   <rect width="1400" height="900" fill="#020617"/><rect width="1400" height="900" fill="url(#grid)" opacity=".8"/>
-  <text x="70" y="65" class="title">OpenStack Lab — existing three-node HA cluster</text>
-  <text x="70" y="98" class="subtitle">Learning phases inspect the services; they do not imply dedicated single-role nodes.</text>
+  <text x="70" y="65" class="title">OpenStack Lab — reported three-node HA topology</text>
+  <text x="70" y="98" class="subtitle">Reported roles; live service placement and HA mechanisms remain to be verified.</text>
   <rect x="55" y="140" width="1290" height="340" class="boundary"/>
   <text x="80" y="173" class="small">Management / API LAN — node addresses shown; management VM must use a separate address</text>
   <rect x="90" y="235" width="220" height="150" class="box mgmt"/>
@@ -35,6 +35,6 @@
   <text x="700" y="611" text-anchor="middle" class="small">Discover API/VIP, database and messaging topology, network-agent/router HA, compute, and storage behavior.</text>
   <text x="700" y="644" text-anchor="middle" class="tiny">A running service or moving VIP alone does not prove end-to-end availability or data durability.</text>
   <rect x="120" y="735" width="1160" height="105" class="boundary"/>
-  <text x="700" y="775" text-anchor="middle" class="label">Learning order</text>
-  <text x="700" y="810" text-anchor="middle" class="small">Linux → SSH/Ansible → discovery → networking → time → controller → network → compute → Cinder → failure tests → HA/VIP → Terraform → Grafana</text>
+  <text x="700" y="775" text-anchor="middle" class="label">Network paths to verify</text>
+  <text x="700" y="810" text-anchor="middle" class="small">Management / API → internal / tunnel → provider / external</text>
 </svg>

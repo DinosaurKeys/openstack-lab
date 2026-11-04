@@ -1,39 +1,56 @@
-# OpenStack Lab Intensive Guide
+# OpenStack Lab Guide
 
-This guide is the shared operating manual for this lab. It is written for a VM engineer who is still building Linux confidence and who wants to avoid deleting the lab and starting over.
+This is the single step-by-step guide for learning and checking the owner-reported lab. The README is a short overview and points here; it is not a second procedure.
 
-The rule is: understand one layer, verify it, save the evidence, then move forward.
+Follow the 13 steps below in order. Start at “Resume here” if you are returning to the lab. The step numbers are the learning order; filenames like `00-local-preflight.sh` are script names and use a separate numbering scheme.
 
-## 1. Lab identity and confirmed role model
+## Resume here
+
+Last checked from the management VM: November 4, 2026 (17:57 UTC).
+
+- Step 1: local preflight passed; Linux/recovery exercises have not been formally checked off.
+- Step 2: SSH key authentication and Ansible reached all three nodes successfully.
+- Step 3: read-only interface, route, and disk discovery completed; a local evidence report was saved.
+- Step 4 is in progress: all three nodes' management interfaces and default routes are up, while the USB NICs remain down. `bridge link show` returned no entries.
+- Step 5: the time check was run early and `NTPSynchronized=yes` was observed on all nodes. Chrony source health was not confirmed.
+- The management VM has no `openstack` CLI. On the nodes, no host `ovs-vsctl` or active `openvswitch-switch` service was found; Docker/Podman and matching OpenStack packages/services were not found either. The deployment method and actual Neutron/provider path remain unverified; this is not proof that the reported cloud is absent.
+- No network, storage, or OpenStack configuration was changed.
+
+Next: identify how OpenStack/network services are deployed and map the actual Neutron/provider path using read-only checks. Do not enable the USB NICs, install OVS or the OpenStack CLI, apply Netplan, alter LVM, or run a failover test until the current deployment and recovery path are understood. The earlier disk snapshot showed Cinder LVM; treat that as in-use until verified.
+
+The reports are local, ignored files in `evidence/` on the management VM checkout; they are intentionally not committed to GitHub. The latest network snapshot is `step-04-network-review-20261104T175656Z.txt`.
+
+
+## Lab overview
 
 ### Physical layout
 
-| System | Address | Configured roles | Important note |
-|---|---:|---|---|
-| Management VM | must be unique | Hermes, Git, Ansible | must not reuse a node address |
+| System | Address | Owner-reported roles |
+|---|---:|---|
+| Management VM | separate, unique address | Hermes, Git, Ansible |
 | Node 1 | `192.168.0.200` | Controller + network + compute; HA member |
 | Node 2 | `192.168.0.201` | Controller + network + compute; HA member |
 | Node 3 | `192.168.0.202` | Controller + network + compute; HA member |
 
-Per the lab owner, all three nodes have controller, network, and compute roles and are configured for HA. The phase names below are learning topics, not a proposal to split roles across nodes or deploy a new single-controller cloud. The exact HA implementation and current service state must still be read from the nodes before troubleshooting or failover actions.
+The lab owner reports that all three nodes have controller, network, and compute roles and are configured for HA. The live checks have not yet verified service placement or HA mechanisms. The step names below are learning topics, not a proposal to split roles across nodes or deploy a new single-controller cloud.
 
 Each physical node has 16 GB RAM and four CPU cores. It has a management interface and USB NIC hardware; discover each NIC's actual current role rather than assuming the USB NIC is private/internal.
 
-An earlier discovery snapshot recorded the following observations; they have not been freshly verified as part of this documentation update. Treat them as historical until phase 3 is rerun:
+An earlier discovery snapshot recorded the following observations; they have not been freshly verified as part of this documentation update. Treat them as historical until the Step 3 discovery check is rerun:
 
 - management interface: `enp0s31f6`
 - USB NIC on Node 1: `enx00e04c2c1678`
 - USB NIC on Node 2: `enx00e04c557e58`
 - USB NIC on Node 3: `enx00e04c304688`
-- the USB NICs are currently down
+- the USB NICs were down in that snapshot
 - time synchronization is active
 - the disks already contain LVM-backed storage, including an existing Cinder volume pool
 
 Do not assume these names will remain unchanged after hardware changes. Re-run discovery when hardware or operating-system networking changes.
 
-## 2. What we are building
+## What this guide is for
 
-The existing three-node HA cluster is the environment we are learning and operating. The sequence below focuses on understanding and validating its components, then testing recovery safely; it is not a plan to install a new non-HA cloud.
+The owner-reported three-node HA topology is the environment we are learning and checking. First verify what is actually deployed and how it is connected; this guide is not an instruction to install a new non-HA cloud.
 
 ```text
                               User / Operator
@@ -56,7 +73,7 @@ The existing three-node HA cluster is the environment we are learning and operat
 +------+-------+               +-----+------+                +-----+------+
        |                             |                             |
        +=============================+=============================+
-                 Private/internal network over USB NICs
+                 Network paths to be confirmed from live configuration
 ```
 
 ### Service flow for a test instance
@@ -80,25 +97,25 @@ Layer A: Management/API network
   Existing LAN, SSH, Ansible, OpenStack API, DNS, package downloads.
 
 Layer B: Internal/tunnel network
-  USB NICs, private node-to-node communication, tenant/tunnel traffic.
+  Identify configured interfaces, bridges, VLANs, and overlay from live state.
 
 Layer C: Provider/external network
   Optional path for floating IPs. It needs a deliberate physical and
   switch/router design. It must not be invented by guessing a NIC.
 ```
 
-## 3. The anti-reset operating method
+## Safe operating rules
 
 When a command fails, the lab is not lost. The failure is a location marker.
 
-### The six-step recovery loop
+### When a command fails
 
-1. Stop at the first failed command.
-2. Save the complete command and output under `evidence/`.
-3. Identify the phase: Linux, SSH, network, time, controller services, network services, compute services, storage, HA, or application.
-4. Run a read-only diagnostic for that phase.
-5. Change one thing only.
-6. Re-run the phase check before touching later phases.
+- Stop at the first failed command.
+- Save the complete command and output under `evidence/`.
+- Identify the step or service area: Linux, SSH, networking, time, controller, compute, storage, HA, or application.
+- Run a read-only diagnostic for that step or service area.
+- Change one thing only.
+- Re-run that step's check before moving on.
 
 Never do this as a first response:
 
@@ -106,7 +123,7 @@ Never do this as a first response:
 - delete `/etc` configuration
 - recreate a volume group
 - run `pvcreate` because a guide used `/dev/sdb`
-- add HA to hide a broken single-node deployment
+- improvise HA changes or failover tests to hide a broken service
 - copy commands from a different OpenStack release
 
 ### Evidence convention
@@ -115,8 +132,8 @@ Never do this as a first response:
 evidence/
   discovery-YYYYMMDDTHHMMSSZ.txt
   time-hosts-YYYYMMDDTHHMMSSZ.txt
-  phase-01-ssh.txt
-  phase-02-network.txt
+  step-02-ssh.txt
+  step-04-network-review.txt
   incidents.md
 ```
 
@@ -124,7 +141,7 @@ A good incident entry contains:
 
 ```text
 Date/time:
-Phase:
+Step:
 Command:
 Observed error:
 What I expected:
@@ -134,18 +151,21 @@ Verification result:
 Rollback:
 ```
 
-## 4. Phase 1 — Linux and recovery basics
+## The 13 learning steps
 
-### Goal
+Run these commands from the root of your existing `openstack-lab` checkout unless stated otherwise.
+
+### Step 1 — Linux and recovery basics
+
+#### Goal
 
 Become comfortable enough with Linux to inspect a system without guessing.
 
-### Commands to practice on the management VM
+#### Commands to practice on the management VM
 
 ```bash
 pwd
 ls -la
-cd /home/joe/fishbone
 find . -maxdepth 2 -type f
 id
 whoami
@@ -155,7 +175,7 @@ systemctl --failed
 journalctl -p warning -b
 ```
 
-### File editing
+#### File editing
 
 Start with `nano`:
 
@@ -174,7 +194,7 @@ For system files, always make a backup before editing:
 sudo cp /etc/hosts /etc/hosts.bak.$(date +%Y%m%d%H%M%S)
 ```
 
-### Completion criteria
+#### Completion criteria
 
 You can explain the difference between:
 
@@ -184,13 +204,13 @@ You can explain the difference between:
 - a normal user and root
 - a package and a running service
 
-## 5. Phase 2 — SSH and Ansible
+### Step 2 — SSH and Ansible
 
-### Goal
+#### Goal
 
 The management VM can reach every node without storing passwords in the repository.
 
-### Security model
+#### Security model
 
 - Use the normal user `joe`.
 - Use an Ed25519 SSH key.
@@ -198,26 +218,24 @@ The management VM can reach every node without storing passwords in the reposito
 - Do not enable root SSH as a shortcut.
 - Do not paste passwords, private keys, or MFA codes into chat.
 
-### Check local tools
+#### Check local tools
 
 ```bash
-cd /home/joe/fishbone
 bash scripts/00-local-preflight.sh
 ```
 
-### Inventory
+#### Inventory
 
 The inventory is in `inventory/hosts.yml`. Change only the values that are actually different in your lab.
 
 ```bash
-ANSIBLE_CONFIG=/home/joe/fishbone/ansible/ansible.cfg \
+ANSIBLE_CONFIG=ansible/ansible.cfg \
   ansible-inventory --graph
 ```
 
-### Verify connectivity
+#### Verify connectivity
 
 ```bash
-cd /home/joe/fishbone
 bash scripts/01-verify-ssh-ansible.sh
 ```
 
@@ -225,9 +243,11 @@ Expected result:
 
 - three `pong` responses
 - each node reports its hostname and management address
-- the script ends with `PHASE 1 PASSED`
+- the script ends with `STEP 2 PASSED`
 
-### Common failure map
+Ansible's ad-hoc `shell` task may display `CHANGED` even though the command only reads hostname and addresses. That status is Ansible's default for shell commands; it is not, by itself, evidence that the node was modified.
+
+#### Common failure map
 
 | Symptom | First check |
 |---|---|
@@ -237,14 +257,13 @@ Expected result:
 | Python missing | install Python 3 on the node, then rerun |
 | wrong node answers | duplicate IP or stale ARP; stop and fix addressing |
 
-## 6. Phase 3 — Discover interfaces and storage
+### Step 3 — Discover interfaces and storage
 
-### Goal
+#### Goal
 
 Replace guesses with facts before changing networking or storage.
 
 ```bash
-cd /home/joe/fishbone
 bash scripts/02-discover-nics-and-disks.sh
 ```
 
@@ -257,7 +276,7 @@ ip route             default route and connected networks
 lsblk                disks, filesystems, mounts, LVM
 ```
 
-### Current lab finding
+#### Current lab finding
 
 The earlier snapshot recorded USB NICs as visible but down. Re-discover all links, bridges, routes, and provider-network configuration before deciding their current purpose or changing network settings.
 
@@ -268,13 +287,32 @@ That earlier storage output showed an LVM-backed Cinder pool. Confirm current st
 - do not assume `/dev/sdb` is unused
 - document the existing volume group and pool before changing storage
 
-## 7. Phase 4 — Static networking
+### Step 4 — Static networking (audit existing setup first)
 
-### Goal
+#### Goal
 
-Verify the existing address, route, DNS, bridge, and VLAN configuration while preserving SSH/API access. Create a reviewed change plan only if discovery shows a real problem; do not reconfigure a working HA cluster simply to follow a tutorial example.
+Audit the current address, route, DNS, bridge, and VLAN configuration while preserving SSH/API access. Create a reviewed change plan only if discovery shows a real problem; do not change the reported HA topology simply to follow a tutorial example.
 
-### Network discovery and change plan
+#### Network discovery and change plan
+
+Start with a fresh, read-only snapshot from the management VM:
+
+```bash
+mkdir -p evidence
+OUT="evidence/step-04-network-review-$(date -u +%Y%m%dT%H%M%SZ).txt"
+ANSIBLE_CONFIG=ansible/ansible.cfg ansible openstack_nodes -m shell \
+  -a 'ip -brief link; ip -brief address; ip route; bridge link show' | tee "$OUT"
+```
+
+If the existing OpenStack CLI credentials are already configured, inspect (do not change) the cloud's current network agents, networks, and subnets:
+
+```bash
+openstack network agent list --long
+openstack network list --long
+openstack subnet list --long
+```
+
+These are list/read commands. If the CLI is not already authenticated, skip this part and record it as unknown; do not put credentials in the repository or chat. See the official [OpenStackClient networking command reference](https://docs.openstack.org/python-openstackclient/latest/cli/command-objects/network/v2/index.html).
 
 ```text
 Management/API network: record actual addresses, routes, gateway, DNS, and API endpoint path.
@@ -285,7 +323,7 @@ Do not create a second subnet or move a default route based on this example alon
 
 Do not assume a USB NIC is an isolated underlay or that any example subnet is correct. Confirm current cabling and configuration, and check for overlap with LAN, VPN, Docker, libvirt, and Wi-Fi networks.
 
-### Safe change process
+#### Safe change process
 
 1. Collect interface, address, route, DNS, bridge, and VLAN state from all nodes.
 2. Compare management reachability and the actual OpenStack network configuration.
@@ -297,14 +335,13 @@ Do not assume a USB NIC is an isolated underlay or that any example subnet is co
 
 Do not add or move a default route based on an assumed interface role. Confirm the live routing design and failover implications first.
 
-## 8. Phase 5 — Time synchronization
+### Step 5 — Time synchronization
 
-### Goal
+#### Goal
 
-All nodes agree on time before authentication, queues, databases, or OpenStack services are installed.
+Verify all nodes report synchronized time and identify the configured time source. The lab owner reports an existing cluster; do not install or reconfigure time services just to follow a fresh-install tutorial.
 
 ```bash
-cd /home/joe/fishbone
 bash scripts/03-check-time-and-hosts.sh
 ```
 
@@ -323,13 +360,13 @@ Completion criteria:
 - hostnames resolve consistently
 - all nodes show the expected UTC time
 
-## 9. Phase 6 — Controller
+### Step 6 — Controller
 
-### Goal
+#### Goal
 
-Understand and inspect the controller services across the existing HA cluster. Do not assume Node 1 is the only controller or bootstrap a new control plane. First discover where APIs, databases, message queues, and supporting services actually run and how they are monitored.
+Confirm whether and how controller services are deployed across the owner-reported HA nodes. Do not assume Node 1 is the only controller or bootstrap a new control plane. First discover where APIs, databases, message queues, and supporting services actually run and how they are monitored.
 
-### Services and responsibilities
+#### Services and responsibilities
 
 | Service | Responsibility |
 |---|---|
@@ -341,37 +378,22 @@ Understand and inspect the controller services across the existing HA cluster. D
 | Database | persistent service state |
 | Message queue | service-to-service messaging |
 
-### Deployment method gate
+#### Controller checks
 
-Choose one method for one OpenStack release. Do not mix snippets from manual packages, OpenStack-Ansible, Kolla, Juju, or DevStack.
-
-The exact choice depends on:
-
-- operating-system release
-- supported OpenStack release
-- free disk space
-- KVM availability
-- network design
-- whether this is a manual learning build or an automation build
-
-For learning, understand the official service order first. For repeatable deployment, use one supported automation project after its requirements are checked. The commands are deliberately not hard-coded here until the OS and release are confirmed.
-
-### Controller checks
-
-The controller phase is complete only when you can verify:
+Inspect the existing deployment; do not bootstrap or reinstall it. Record whether you can verify:
 
 - Keystone token issuance
 - service catalog endpoints
-- Glance image upload/list
+- current Glance image catalog and image list (do not upload without approval)
 - Placement resource inventory
 - Nova service list
 - API access from the management VM
 
-## 10. Phase 7 — Network node
+### Step 7 — Network node
 
-### Goal
+#### Goal
 
-Understand how the existing Neutron/network services turn a logical network into Linux/OVS datapath state across the cluster. Identify which agents run on which nodes from live observations rather than assuming a dedicated network node.
+Identify whether and how Neutron/network services turn a logical network into Linux/OVS datapath state across the nodes. Use live observations to locate agents rather than assuming a dedicated network node.
 
 Conceptual flow:
 
@@ -392,19 +414,19 @@ Neutron server
 
 The final bridge and tunnel design depends on the selected Neutron backend. Discover the provider NIC before configuring external networking.
 
-Completion criteria:
+If a Neutron deployment is found, verify:
 
 - Neutron agents are up
-- a tenant network can be created
-- a subnet can be created
-- DHCP supplies an address to a test port
+- existing tenant networks and subnets can be listed
+- Neutron agent and HA router state can be read from the existing cloud
+- DHCP service is present/healthy where configured
 - network agents, namespaces, bridges, and HA router state can be diagnosed on all relevant nodes
 
-## 11. Phase 8 — Compute node
+### Step 8 — Compute node
 
-### Goal
+#### Goal
 
-Understand the compute service on each node and trace a test guest's scheduling, network, and storage path. Do not assume Node 3 is the only hypervisor; discover the actual placement and capacity first.
+Confirm whether compute services and existing guests are present across the nodes. Do not assume Node 3 is the only hypervisor. Only launch a new test guest if the user approves a specific resource plan and existing workloads have been checked.
 
 First verify hardware virtualization:
 
@@ -414,7 +436,7 @@ ls -l /dev/kvm
 virsh list --all
 ```
 
-A compute phase is not complete because a service is running. It is complete when:
+For a later, approved test guest, verify the following:
 
 1. Nova sees the compute service.
 2. Placement reports resources.
@@ -423,11 +445,11 @@ A compute phase is not complete because a service is running. It is complete whe
 5. The guest gets a port and address.
 6. Console/log inspection explains any failure.
 
-## 12. Phase 9 — Cinder
+### Step 9 — Cinder
 
-### Goal
+#### Goal
 
-Provide block storage without damaging existing disks.
+Inspect the current Cinder services, backends, pools, and existing volumes without changing disk or LVM state.
 
 Cinder concepts:
 
@@ -449,15 +471,14 @@ findmnt
 
 A disk is eligible only when its identity, capacity, and lack of important data are confirmed. Existing LVM metadata is evidence that the disk is already in use, not evidence that it is free.
 
-Completion criteria:
+Read-only milestone:
 
-- a volume type/backend is visible
-- a small test volume can be created
-- the volume can attach to a test instance
-- the volume can be detached cleanly
-- the data path and recovery procedure are documented
+- the current volume types, backends, pools, and volumes can be listed
+- the existing data path and recovery procedure are documented
 
-## 13. Phase 10 — Failure testing
+Creating or attaching a test volume is a separate, explicitly approved exercise. Confirm available capacity, quotas, and a recovery plan first; never initialize or recreate a disk or volume group as part of this step.
+
+### Step 10 — Failure testing
 
 Do not call the lab reliable until failure behavior is observed.
 
@@ -480,11 +501,11 @@ For each test record:
 - how long recovery took
 - what manual action was needed
 
-## 14. Phase 11 — Existing HA/VIP verification
+### Step 11 — HA/VIP verification (reported setup)
 
-### Goal
+#### Goal
 
-The owner reports that all three nodes are already configured for HA. This phase is to discover, document, and validate that configuration—not to add HA later or create an unplanned VIP.
+The owner reports that all three nodes are already configured for HA. Step 11 is to discover, document, and validate that configuration—not to add HA or create an unplanned VIP.
 
 A VIP by itself is not HA. A resilient design needs coordinated handling for:
 
@@ -498,9 +519,9 @@ A VIP by itself is not HA. A resilient design needs coordinated handling for:
 
 Before any failure test, identify the real VIP owner mechanism, API proxy, database/quorum behavior, messaging topology, network-agent/router state, storage guarantees, and recovery procedure. A VIP move alone does not prove the service or data path survived. Run one scoped, approved, reversible test at a time and check user-visible API and workload behavior as well as process state.
 
-## 15. Phase 12 — Terraform
+### Step 12 — Terraform
 
-Terraform belongs after the cloud can reliably create resources manually.
+Terraform belongs after the cloud can reliably create resources manually. Use a sandbox project and do not run `apply` without an approved plan.
 
 Learning order:
 
@@ -521,7 +542,7 @@ Never commit:
 
 Use a protected secret store or environment variables.
 
-## 16. Phase 13 — Grafana
+### Step 13 — Grafana
 
 Monitoring should answer operational questions:
 
@@ -546,33 +567,32 @@ Prometheus -> targets and alert rules -> Grafana dashboards
 
 Validate the Prometheus target directly before importing dashboards. A dashboard with no verified data is decoration, not monitoring.
 
-## 17. Daily operating checklist
+## Daily operating checklist
 
 ```text
-[ ] I am in /home/joe/fishbone.
+[ ] I am in the root of the existing repository checkout.
 [ ] git status shows what changed.
-[ ] I know which phase I am working on.
+[ ] I know which step I am working on.
 [ ] I have a recovery path before changing networking/storage.
 [ ] I ran discovery instead of guessing.
-[ ] I saved command output for the phase.
+[ ] I saved command output for this step.
 [ ] I changed one thing only.
-[ ] I reran the phase check.
+[ ] I reran the check for this step.
 [ ] I did not commit secrets.
 ```
 
-## 18. Definition of done for this learning sequence
+## Completion criteria
 
-The first milestone is complete when:
+The end-to-end learning milestone is complete when:
 
 - Ansible reaches all three nodes and can collect independent per-node observations.
 - Management and internal network roles are understood.
 - Controller, network, and compute services are mapped across all three nodes.
 - All nodes have synchronized time.
-- Controller APIs respond.
-- Network services create a usable tenant network.
-- Compute launches a test instance.
-- Storage behavior is documented and tested if enabled.
-- The existing HA mechanisms and their limits are documented, and an approved failure/recovery exercise is recorded.
+- If OpenStack is deployed, controller APIs respond.
+- If OpenStack services are deployed, network services can provide a usable tenant network and compute can launch a test instance in an approved sandbox.
+- Storage behavior is documented and tested if enabled, after capacity and approval checks.
+- The owner-reported HA mechanisms and their limits are verified; any failure/recovery exercise is explicitly approved and recorded.
 - The repository contains enough evidence to resume without reinstalling.
 
-The existing HA mechanisms, Terraform, and Grafana should be studied in sequence after the preceding checks and failure/recovery evidence are complete; HA is already configured, not a later build step.
+Terraform and Grafana come after the preceding checks. Treat HA as an owner-reported existing setup to verify, not as permission to change or fail over the cluster.
