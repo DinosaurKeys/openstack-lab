@@ -2,17 +2,17 @@
 
 This is the canonical, from-scratch installation procedure for the lab. It is not a pre-check or a “resume where the existing machines happen to be” guide. Assume the management VM and all three nodes are newly installed; install SSH and Ansible even if the tools are already present on another machine.
 
-Follow the numbered steps in order. The deployment method is Kolla-Ansible, installed in a Python virtual environment on a separate management VM. The pinned baseline is Ubuntu Server 24.04 LTS and Kolla-Ansible `stable/2026.1`; do not mix commands, container images, or constraints from another OpenStack series.
+Follow the numbered steps in order. The deployment method is Kolla-Ansible, installed in a Python virtual environment on a separate management VM. The pinned baseline is Ubuntu Server 24.04 LTS and Kolla-Ansible `stable/2026.2`; do not mix commands, container images, or constraints from another OpenStack series.
 
 Official references used by this procedure:
 
-- [Kolla-Ansible 2026.1 Quickstart](https://docs.openstack.org/kolla-ansible/2026.1/user/quickstart)
-- [Kolla-Ansible 2026.1 Multinode Deployment](https://docs.openstack.org/kolla-ansible/2026.1/user/multinode.html)
-- [Kolla-Ansible 2026.1 Support Matrix](https://docs.openstack.org/kolla-ansible/2026.1/user/support-matrix)
-- [Kolla-Ansible 2026.1 Series Release Notes](https://docs.openstack.org/releasenotes/kolla-ansible/2026.1.html)
-- [Kolla-Ansible Production Architecture Guide](https://docs.openstack.org/kolla-ansible/2026.1/admin/production-architecture-guide.html)
-- [Kolla-Ansible Cinder Guide](https://docs.openstack.org/kolla-ansible/2026.1/reference/storage/cinder-guide.html)
-- [Kolla-Ansible Grafana Guide](https://docs.openstack.org/kolla-ansible/latest/reference/logging-and-monitoring/grafana-guide.html)
+- [Kolla-Ansible 2026.2 Quickstart](https://docs.openstack.org/kolla-ansible/2026.2/user/quickstart.html)
+- [Kolla-Ansible 2026.2 Multinode Deployment](https://docs.openstack.org/kolla-ansible/2026.2/user/multinode.html)
+- [Kolla-Ansible 2026.2 Support Matrix](https://docs.openstack.org/kolla-ansible/2026.2/user/support-matrix)
+- [Kolla-Ansible 2026.2 Series Release Notes](https://docs.openstack.org/releasenotes/kolla-ansible/2026.2.html)
+- [Kolla-Ansible Production Architecture Guide](https://docs.openstack.org/kolla-ansible/2026.2/admin/production-architecture-guide.html)
+- [Kolla-Ansible Cinder Guide](https://docs.openstack.org/kolla-ansible/2026.2/reference/storage/cinder-guide.html)
+- [Kolla-Ansible 2026.2 Grafana Guide](https://docs.openstack.org/kolla-ansible/2026.2/reference/logging-and-monitoring/grafana-guide.html)
 - [Netplan MAC matching and interface naming](https://netplan.readthedocs.io/en/stable/matching-interface-by-mac-address/)
 - [Ubuntu Server installation tutorial](https://ubuntu.com/tutorials/install-ubuntu-server)
 
@@ -24,6 +24,8 @@ Official references used by this procedure:
 | Node 1 | `NODE1_MGMT_IP` | `control`, `network`, `compute` |
 | Node 2 | `NODE2_MGMT_IP` | `control`, `network`, `compute` |
 | Node 3 | `NODE3_MGMT_IP` | `control`, `network`, `compute` |
+
+The table lists the required core-role placement. The upstream multinode inventory also has `monitoring` and `storage` groups; Step 5 removes its example hostnames, and the optional Grafana and Cinder steps add real hosts only when those services are selected.
 
 All three physical nodes are intended to carry control, network, and compute services. An odd three-node control group supports quorum for clustered control-plane services, but it does not make every service or storage backend highly available. This is a small learning cluster, not a production design.
 
@@ -113,15 +115,16 @@ Completion: SSH to each node with the dedicated key returns its expected hostnam
 
 ## Step 3 — Install Ansible and Kolla-Ansible on the management VM
 
-Use a dedicated Python virtual environment. Kolla-Ansible installs its compatible Ansible dependencies there; do not mix this deployment environment with Ubuntu’s system Ansible packages.
+Use a dedicated Python virtual environment. Kolla-Ansible 2026.2 supports Ansible 13 or 14; install that supported range explicitly in the virtual environment before installing Kolla-Ansible. Do not mix this deployment environment with Ubuntu’s system Ansible packages.
 
 ```bash
 sudo apt install -y git python3-dev libffi-dev gcc libssl-dev libdbus-glib-1-dev python3-venv
 mkdir -p "$HOME/.venvs"
-python3 -m venv "$HOME/.venvs/kolla-2026.1"
-source "$HOME/.venvs/kolla-2026.1/bin/activate"
+python3 -m venv "$HOME/.venvs/kolla-2026.2"
+source "$HOME/.venvs/kolla-2026.2/bin/activate"
 python -m pip install --upgrade pip
-python -m pip install 'git+https://opendev.org/openstack/kolla-ansible@stable/2026.1'
+python -m pip install 'ansible>=13,<15'
+python -m pip install 'git+https://opendev.org/openstack/kolla-ansible@stable/2026.2'
 ```
 
 Create the Kolla configuration directory and copy the matching release’s examples:
@@ -219,7 +222,9 @@ Completion: each node has stable management reachability, the USB/provider inter
 
 Edit `/etc/kolla/multinode`, starting from the copied upstream inventory. Put all three nodes in each of the `control`, `network`, and `compute` groups. Keep the upstream child-group mappings, especially the load balancer mapping to the network group.
 
-The relevant group entries should contain the three hosts. Keep the rest of the copied Kolla inventory, including its child-group mappings:
+The upstream file contains active example hosts such as `control01`, `network01`, `compute01`, `monitoring01`, and `storage01`. Replace every active example hostname with a real host from this lab or remove that entry if the optional role is not enabled; never leave these sample names for Ansible to target. Keep the upstream group sections and child-group mappings. For the base deployment, use the three physical nodes in the core groups and leave `monitoring` and `storage` host entries empty until Step 13 for monitoring and Step 11 for storage, respectively.
+
+Edit the corresponding sections in the copied inventory as follows:
 
 ```ini
 [control]
@@ -237,15 +242,21 @@ node1
 node2
 node3
 
+[monitoring]
+# Add real host aliases here in Step 13 if enabling monitoring.
+
+[storage]
+# Add real host aliases here in Step 11 if enabling Cinder storage.
+
 [all:vars]
-ansible_user=REPLACE_WITH_ADMIN_USER
-ansible_become=true
-ansible_ssh_private_key_file=REPLACE_WITH_HOME_PATH/.ssh/openstack_lab_ed25519
+ansible_ssh_user=REPLACE_WITH_ADMIN_USER
+ansible_become=True
+ansible_private_key_file=REPLACE_WITH_HOME_PATH/.ssh/openstack_lab_ed25519
 ```
 
-Replace all `NODE*_MGMT_IP`, `REPLACE_WITH_ADMIN_USER`, and `REPLACE_WITH_HOME_PATH` values with the clean-install addresses and account path. If the upstream sample already contains these group headers, edit those sections rather than adding duplicate groups. Do not store a sudo password in the inventory. Use a locally approved secure privilege-escalation method; Kolla requires the deployment account to become root on target nodes.
+Replace all `NODE*_MGMT_IP`, `REPLACE_WITH_ADMIN_USER`, and `REPLACE_WITH_HOME_PATH` values with the clean-install addresses and account path. If the upstream sample already contains these group headers, edit those sections rather than adding duplicate groups. Remove its example host entries from optional groups before the base deployment; add only real host aliases later if enabling those services. Do not store a sudo password in the inventory. Use a locally approved secure privilege-escalation method; Kolla requires the deployment account to become root on target nodes.
 
-Do not add hosts to the `storage` group or enable a Cinder backend in this step. Storage is handled separately in Step 11.
+Do not enable a Cinder backend or create storage volumes in this step. Storage is handled separately in Step 11; monitoring is handled separately in Step 13.
 
 Check that Ansible sees exactly three nodes in all three roles and that SSH works:
 
@@ -254,7 +265,9 @@ ansible-inventory -i /etc/kolla/multinode --graph
 ansible -i /etc/kolla/multinode all -m ping
 ```
 
-Completion: each node appears in `control`, `network`, and `compute`; the stock Kolla inventory’s other groups remain intact; Ansible returns `pong` from all three nodes.
+Ansible may warn about hyphens in the upstream group names. Preserve those release-provided names and mappings; do not rename groups to silence the warning.
+
+Completion: each node appears in `control`, `network`, and `compute`; no upstream sample hostname remains active; the other Kolla groups and child-group mappings remain intact; Ansible returns `pong` from all three real nodes.
 
 ## Step 6 — Configure hostnames and time synchronization
 
@@ -318,8 +331,8 @@ This is the installation step where Kolla prepares the Ubuntu hosts, including c
 With the virtual environment active, run from the management VM:
 
 ```bash
-kolla-ansible -i /etc/kolla/multinode bootstrap-servers
-kolla-ansible -i /etc/kolla/multinode prechecks
+kolla-ansible bootstrap-servers -i /etc/kolla/multinode
+kolla-ansible prechecks -i /etc/kolla/multinode
 ```
 
 Stop if either command fails. Read the exact failing task, correct the underlying OS, inventory, DNS, or network issue, and rerun the failed command. Do not work around a failed precheck by disabling it.
@@ -331,7 +344,7 @@ Completion: both commands exit successfully for all three target nodes.
 Deploy the configured Kolla-Ansible release to all three nodes:
 
 ```bash
-kolla-ansible -i /etc/kolla/multinode deploy
+kolla-ansible deploy -i /etc/kolla/multinode
 ```
 
 This is the step that installs and configures the OpenStack services. It can take a long time while container images are downloaded and services are initialized. Keep the management VM powered on and connected for the duration. If the playbook fails, preserve its output and use the Kolla troubleshooting guide; do not rerun destructive disk commands or switch releases to hide an error.
@@ -339,7 +352,7 @@ This is the step that installs and configures the OpenStack services. It can tak
 After the first deployment, validate the generated service configuration:
 
 ```bash
-kolla-ansible -i /etc/kolla/multinode validate-config
+kolla-ansible validate-config -i /etc/kolla/multinode
 ```
 
 Completion: deployment and configuration validation finish successfully, and the enabled service containers are running across their assigned hosts.
@@ -350,13 +363,13 @@ Install the matching OpenStack CLI in the same virtual environment:
 
 ```bash
 python -m pip install python-openstackclient \
-  -c https://releases.openstack.org/constraints/upper/2026.1
+  -c https://releases.openstack.org/constraints/upper/2026.2
 ```
 
 Generate the client configuration and protect the copy in the operator’s home directory:
 
 ```bash
-kolla-ansible -i /etc/kolla/multinode post-deploy
+kolla-ansible post-deploy -i /etc/kolla/multinode
 install -d -m 700 "$HOME/.config/openstack"
 install -m 600 /etc/kolla/clouds.yaml "$HOME/.config/openstack/clouds.yaml"
 export OS_CLOUD=admin
@@ -399,6 +412,8 @@ The base cloud can be installed without Cinder. Choose and document a backend be
 
 If you explicitly choose the LVM exercise, first identify a dedicated, expendable device by model, serial, and stable `/dev/disk/by-id/` path on every storage host. The following operations erase storage metadata. Do not run them until the device mapping, backup, and rollback plan are approved:
 
+Before enabling the backend, add only the selected real host aliases to the inventory’s `[storage]` group and follow the 2026.2 Cinder guide’s `cinder-volume-lvm` mapping. The copied sample’s `storage01` is not a real host; do not leave it in the inventory. If no host has a safe dedicated device, skip Cinder and keep `[storage]` empty.
+
 Run once per selected storage host, replacing the example path with that host’s own confirmed device. The commands below are destructive; the placeholder path does not exist and must not be replaced until the device is approved:
 
 ```bash
@@ -407,7 +422,7 @@ sudo pvcreate "$CINDER_DEVICE"
 sudo vgcreate cinder-volumes "$CINDER_DEVICE"
 ```
 
-Then follow the Kolla-Ansible 2026.1 Cinder guide to enable Cinder, the LVM backend, and the release-matched inventory groups. Do not copy an old inventory-group example from another Kolla release. Re-run `prechecks`, then `deploy` or `reconfigure` as directed by that guide, and test volume create/attach/detach with a disposable instance.
+Then follow the Kolla-Ansible 2026.2 Cinder guide to enable Cinder, the LVM backend, and the release-matched inventory groups. Do not copy an old inventory-group example from another Kolla release. Re-run `prechecks`, then `deploy` or `reconfigure` as directed by that guide, and test volume create/attach/detach with a disposable instance.
 
 Completion: the selected backend, its failure limits, and the restore procedure are documented; a disposable volume can be created and attached if Cinder was enabled.
 
@@ -427,7 +442,9 @@ Never commit `.terraform/`, `*.tfstate`, saved plans, application credentials, o
 
 ## Step 13 — Enable Prometheus and Grafana
 
-Kolla-Ansible can deploy Prometheus and Grafana as part of the cloud. After the core deployment is stable, add these settings to `/etc/kolla/globals.yml`:
+Kolla-Ansible can deploy Prometheus and Grafana as part of the cloud. After the core deployment is stable, first add one or more real host aliases to `[monitoring]` in `/etc/kolla/multinode`, preserving the upstream child-group mappings. The copied sample’s `monitoring01` is not a real host; replace it with a chosen host. If no monitoring host is selected, keep Prometheus and Grafana disabled and do not run this step’s deployment commands.
+
+Then add these settings to `/etc/kolla/globals.yml`:
 
 ```yaml
 enable_prometheus: true
@@ -437,8 +454,8 @@ enable_grafana: true
 Then apply the configuration through Kolla-Ansible:
 
 ```bash
-kolla-ansible -i /etc/kolla/multinode prechecks
-kolla-ansible -i /etc/kolla/multinode deploy
+kolla-ansible prechecks -i /etc/kolla/multinode
+kolla-ansible deploy -i /etc/kolla/multinode
 ```
 
 Keep the dashboards and endpoints on the management network unless a separate, secured access path is deliberately configured. Confirm that Prometheus has live targets before relying on Grafana dashboards or alerts. Add host and OpenStack service metrics gradually; a dashboard without verified data is not monitoring.
