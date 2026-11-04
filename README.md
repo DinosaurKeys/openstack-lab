@@ -17,10 +17,12 @@
 
 ## At a glance
 
-| Management | Controller | Network | Compute |
-|:--|:--|:--|:--|
-| Management VM | Node 1 · Controller | Node 2 · Network | Node 3 · Compute |
-| Separate host; Git and Ansible | `192.168.0.200` · Identity, image, control plane | `192.168.0.201` · Neutron networking | `192.168.0.202` · Nova compute / KVM |
+| Role | Address | Responsibility |
+|:--|:--|:--|
+| Management VM | Separate, unique address | Git and Ansible |
+| Controller | `192.168.0.200` | Identity, image, control plane |
+| Network | `192.168.0.201` | Neutron networking |
+| Compute | `192.168.0.202` | Nova compute / KVM |
 
 Each physical node has 16 GB RAM, a 4-core Intel i5-6500T, and a USB NIC intended for private connectivity. **The management VM needs its own unique address**—do not overlap it with a node address.
 
