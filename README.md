@@ -13,7 +13,7 @@
 
 > This is a learning lab, not a production installer. The scripts are intentionally read-only: they inspect and validate, but do not reconfigure networking, erase disks, or install OpenStack.
 
-[Start with the guide](docs/INTENSIVE-GUIDE.md) · [Architecture](docs/architecture.md) · [Scripts](scripts/)
+[Start with the guide](docs/INTENSIVE-GUIDE.md) · [Architecture](docs/architecture.md) · [GitHub authentication annex](docs/ANNEX-GITHUB-AUTH.md) · [Scripts](scripts/)
 
 ## At a glance
 
@@ -61,6 +61,7 @@ Do not skip discovery or jump to HA. Complete each phase gate and resume from th
 |:--|:--|
 | `docs/INTENSIVE-GUIDE.md` | Detailed phases, checks, and recovery guidance |
 | `docs/architecture.md` | Network roles, traffic flows, and Mermaid build diagram |
+| `docs/ANNEX-GITHUB-AUTH.md` | SSH authentication and safe Git push reminder |
 | `diagrams/openstack-lab-architecture.svg` | Standalone topology diagram |
 | `inventory/hosts.yml` | Ansible host inventory; review before use |
 | `ansible/ansible.cfg` | Project Ansible defaults |
@@ -82,12 +83,6 @@ Choose an OpenStack deployment method only after confirming the host OS, release
 
 No license file is currently included. Until one is added, others do not have an explicit license grant to reuse, modify, or redistribute this repository.
 
----
-
-This repository is a learning lab, not an unattended production installer.
-
-The design goal is simple: every phase can be run, checked, and understood before the next phase begins. Nothing in `scripts/` changes node networking or installs OpenStack automatically.
-
 ## Phase gates
 
 A phase is complete only when its check passes and its evidence is saved.
@@ -101,19 +96,6 @@ A phase is complete only when its check passes and its evidence is saved.
 ## Recovery rule
 
 When something fails, keep the current files, record the exact command and error locally under ignored `evidence/`, run a read-only diagnostic, change one thing, and rerun the failed phase check. Do not reinstall or wipe a node as a first response.
-
-## Deployment method
-
-Do not install OpenStack until the OS, disks, NICs, and virtualization support are known. The [official installation guide](https://docs.openstack.org/install-guide/) is a manual learning path; [OpenStack-Ansible](https://docs.openstack.org/project-deploy-guide/openstack-ansible/latest/) is a possible later automation path. Confirm its current requirements and choose one supported release—do not mix deployment methods or release instructions.
-
-## Not automated yet
-
-- Network configuration: choosing the wrong NIC or default route can disconnect a node.
-- Disk/LVM creation: destructive operations can erase data.
-- OpenStack installation: method and release depend on the discovered host environment.
-- HA: one controller does not become highly available just by adding a VIP.
-
-This is deliberate: inspect first, then make changes with a recovery path.
 
 ## License
 
