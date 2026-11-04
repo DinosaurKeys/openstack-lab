@@ -6,19 +6,19 @@ Follow the 13 steps below in order. Start at “Resume here” if you are return
 
 ## Resume here
 
-Last checked from the management VM: November 4, 2026 (17:57 UTC).
+Latest network/service audit from the management VM: November 4, 2026 (17:57 UTC). Time synchronization was rechecked at 18:11 UTC.
 
 - Step 1: local preflight passed; Linux/recovery exercises have not been formally checked off.
 - Step 2: SSH key authentication and Ansible reached all three nodes successfully.
 - Step 3: read-only interface, route, and disk discovery completed; a local evidence report was saved.
 - Step 4 is in progress: all three nodes' management interfaces and default routes are up, while the USB NICs remain down. `bridge link show` returned no entries.
-- Step 5: the time check was run early and `NTPSynchronized=yes` was observed on all nodes. Chrony source health was not confirmed.
+- Step 5: the 18:11 UTC recheck showed `NTPSynchronized=yes` on all nodes. Chrony source health was not confirmed.
 - The management VM has no `openstack` CLI. On the nodes, no host `ovs-vsctl` or active `openvswitch-switch` service was found; Docker/Podman and matching OpenStack packages/services were not found either. The deployment method and actual Neutron/provider path remain unverified; this is not proof that the reported cloud is absent.
 - No network, storage, or OpenStack configuration was changed.
 
 Next: identify how OpenStack/network services are deployed and map the actual Neutron/provider path using read-only checks. Do not enable the USB NICs, install OVS or the OpenStack CLI, apply Netplan, alter LVM, or run a failover test until the current deployment and recovery path are understood. The earlier disk snapshot showed Cinder LVM; treat that as in-use until verified.
 
-The reports are local, ignored files in `evidence/` on the management VM checkout; they are intentionally not committed to GitHub. The latest network snapshot is `step-04-network-review-20261104T175656Z.txt`.
+The reports are local, ignored files in `evidence/` on the management VM checkout; they are intentionally not committed to GitHub. Latest reports: `step-04-network-review-20261104T175656Z.txt` and `time-hosts-20261104T181128Z.txt`.
 
 
 ## Lab overview
