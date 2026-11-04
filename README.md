@@ -6,7 +6,6 @@
 
 [![Docs](https://img.shields.io/badge/docs-learning%20guide-2563eb?style=for-the-badge)](docs/INTENSIVE-GUIDE.md)
 [![Ansible](https://img.shields.io/badge/automation-Ansible-111827?style=for-the-badge&logo=ansible)](ansible/)
-[![License](https://img.shields.io/badge/license-not%20specified-lightgrey?style=for-the-badge)](#license)
 
 **Learn it. Verify it. Then automate it.**
 
