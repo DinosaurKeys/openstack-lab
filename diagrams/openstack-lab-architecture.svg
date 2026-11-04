@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">OpenStack learning lab architecture</title>
+  <desc id="desc">Management VM connected to three physical OpenStack nodes over a management network and private USB network.</desc>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="1"/>
+    </pattern>
+    <marker id="arrow-cyan" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#22d3ee"/></marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#34d399"/></marker>
+    <style>
+      .title { font: 700 30px sans-serif; fill: #f8fafc; }
+      .subtitle { font: 16px sans-serif; fill: #94a3b8; }
+      .label { font: 700 18px sans-serif; fill: #f8fafc; }
+      .small { font: 14px sans-serif; fill: #cbd5e1; }
+      .tiny { font: 12px sans-serif; fill: #94a3b8; }
+      .box { stroke-width: 2; rx: 14; }
+      .mgmt { fill: #0c4a6e; stroke: #22d3ee; }
+      .controller { fill: #064e3b; stroke: #34d399; }
+      .network { fill: #3b0764; stroke: #c084fc; }
+      .compute { fill: #78350f; stroke: #fbbf24; }
+      .boundary { fill: none; stroke: #64748b; stroke-width: 2; stroke-dasharray: 10 7; rx: 20; }
+    </style>
+  </defs>
+  <rect width="1400" height="900" fill="#020617"/>
+  <rect width="1400" height="900" fill="url(#grid)" opacity="0.8"/>
+  <text x="70" y="65" class="title">OpenStack Lab — learning architecture</text>
+  <text x="70" y="95" class="subtitle">Build the functional cloud first; add HA only after failure tests pass.</text>
+
+  <rect x="55" y="135" width="1290" height="235" class="boundary"/>
+  <text x="80" y="165" class="small">Management / API network — existing 192.168.0.0/24 LAN</text>
+
+  <line x1="270" y1="265" x2="430" y2="265" stroke="#22d3ee" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+  <line x1="700" y1="265" x2="810" y2="265" stroke="#22d3ee" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+  <line x1="1080" y1="265" x2="1190" y2="265" stroke="#22d3ee" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+
+  <rect x="90" y="205" width="180" height="120" class="box mgmt"/>
+  <text x="180" y="240" text-anchor="middle" class="label">Management VM</text>
+  <text x="180" y="266" text-anchor="middle" class="small">Hermes + Git</text>
+  <text x="180" y="288" text-anchor="middle" class="small">Ansible</text>
+  <text x="180" y="310" text-anchor="middle" class="tiny">unique IP required</text>
+
+  <rect x="430" y="190" width="270" height="150" class="box controller"/>
+  <text x="565" y="225" text-anchor="middle" class="label">Node 1 — Controller</text>
+  <text x="565" y="251" text-anchor="middle" class="small">192.168.0.200</text>
+  <text x="565" y="279" text-anchor="middle" class="small">Keystone · Glance · Placement</text>
+  <text x="565" y="303" text-anchor="middle" class="small">Nova API · DB · MQ</text>
+  <text x="565" y="325" text-anchor="middle" class="tiny">16 GB / 4 cores</text>
+
+  <rect x="810" y="190" width="270" height="150" class="box network"/>
+  <text x="945" y="225" text-anchor="middle" class="label">Node 2 — Network</text>
+  <text x="945" y="251" text-anchor="middle" class="small">192.168.0.201</text>
+  <text x="945" y="279" text-anchor="middle" class="small">Neutron · DHCP · L3</text>
+  <text x="945" y="303" text-anchor="middle" class="small">OVS / Linux bridge</text>
+  <text x="945" y="325" text-anchor="middle" class="tiny">16 GB / 4 cores</text>
+
+  <rect x="1190" y="190" width="150" height="150" class="box compute"/>
+  <text x="1265" y="225" text-anchor="middle" class="label">Node 3</text>
+  <text x="1265" y="249" text-anchor="middle" class="label">Compute</text>
+  <text x="1265" y="275" text-anchor="middle" class="small">.202</text>
+  <text x="1265" y="301" text-anchor="middle" class="small">Nova + KVM</text>
+  <text x="1265" y="325" text-anchor="middle" class="tiny">16 GB / 4 cores</text>
+
+  <rect x="180" y="430" width="1050" height="250" class="boundary"/>
+  <text x="205" y="460" class="small">Private/internal network — USB NICs, no guessed default gateway</text>
+  <line x1="565" y1="340" x2="565" y2="570" stroke="#34d399" stroke-width="4" stroke-dasharray="10 7"/>
+  <line x1="945" y1="340" x2="945" y2="570" stroke="#34d399" stroke-width="4" stroke-dasharray="10 7"/>
+  <line x1="1265" y1="340" x2="1265" y2="570" stroke="#34d399" stroke-width="4" stroke-dasharray="10 7"/>
+  <line x1="565" y1="570" x2="1265" y2="570" stroke="#34d399" stroke-width="4" marker-end="url(#arrow-green)"/>
+  <text x="915" y="610" text-anchor="middle" class="small">tenant/tunnel/service traffic after NICs are physically connected and configured</text>
+
+  <rect x="210" y="725" width="300" height="105" class="box mgmt"/>
+  <text x="360" y="760" text-anchor="middle" class="label">Phase gates</text>
+  <text x="360" y="786" text-anchor="middle" class="small">SSH → discovery → network → time</text>
+  <text x="360" y="808" text-anchor="middle" class="small">controller → network → compute</text>
+
+  <rect x="550" y="725" width="300" height="105" class="box network"/>
+  <text x="700" y="760" text-anchor="middle" class="label">Later stages</text>
+  <text x="700" y="786" text-anchor="middle" class="small">Cinder → failure tests → HA/VIP</text>
+  <text x="700" y="808" text-anchor="middle" class="small">Terraform → Prometheus/Grafana</text>
+
+  <rect x="890" y="725" width="300" height="105" class="box compute"/>
+  <text x="1040" y="760" text-anchor="middle" class="label">Safety rules</text>
+  <text x="1040" y="786" text-anchor="middle" class="small">never guess a NIC or disk</text>
+  <text x="1040" y="808" text-anchor="middle" class="small">save evidence; fix one phase</text>
+</svg>

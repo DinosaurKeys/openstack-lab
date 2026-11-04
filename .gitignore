@@ -1,0 +1,12 @@
+# Local lab evidence can contain private addresses, hostnames, disk models, and command output.
+evidence/*
+!evidence/.gitkeep
+
+# Secrets and generated credentials
+*.pem
+*.key
+*.crt
+clouds.yaml
+terraform.tfstate
+terraform.tfstate.*
+*.retry
