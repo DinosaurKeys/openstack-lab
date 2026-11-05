@@ -357,29 +357,43 @@ Ansible may warn about hyphens in the upstream group names. Preserve those relea
 
 Completion: each node appears in `control`, `network`, and `compute`; no upstream sample hostname remains active; the other Kolla groups and child-group mappings remain intact; Ansible returns `pong` from all three real nodes.
 
-## Step 6 — Configure hostnames and time synchronization
+## Step 6 — Verify hostnames and time synchronization
 
-Kolla’s clustered services need consistent hostnames and synchronized clocks. On each node and the management VM:
+Kolla-Ansible 2026.2 prechecks accept a running host NTP daemon (`chrony`, `chronyd`, `ntp`, `ntpd`, or `systemd-timesyncd`) and require `timedatectl` to report a synchronized clock. Keep a service that is already active and synchronized; do not install a second time daemon just to match one particular implementation.
 
-```bash
-sudo timedatectl set-timezone UTC
-sudo apt install -y chrony
-sudo systemctl enable --now chrony
-```
-
-Use the normal Chrony upstream pool provided by the site/router or configure the same approved reachable time sources on every host. Do not invent a local time server or point nodes at an address that is not running NTP.
-
-Check the result on each node:
+On each node and the management VM, check:
 
 ```bash
 hostnamectl
 getent hosts node1 node2 node3
-timedatectl
-chronyc tracking
-chronyc sources -v
+timedatectl show -p Timezone -p NTPSynchronized
+systemctl is-active chrony chronyd ntp ntpd systemd-timesyncd
 ```
 
-Completion: all four systems resolve the same hostnames, report synchronized time, and show a reachable selected time source.
+`systemctl` may list some candidates as inactive because they are not installed; at least one supported daemon must be active. The timezone should be `Etc/UTC` or `UTC`, and `NTPSynchronized` should be `yes`. If these checks pass, leave the time service as-is. If the timezone is not UTC, set it on the nodes from the management VM:
+
+```bash
+ansible -i /etc/kolla/multinode control -b -K \
+  -m ansible.builtin.command \
+  -a 'timedatectl set-timezone UTC'
+```
+
+If no supported daemon is active, or the clock remains unsynchronized after allowing it time to sync, install and enable Chrony on the affected nodes:
+
+```bash
+ansible -i /etc/kolla/multinode control -b -K \
+  -m ansible.builtin.apt \
+  -a 'name=chrony state=present update_cache=true'
+ansible -i /etc/kolla/multinode control -b -K \
+  -m ansible.builtin.systemd_service \
+  -a 'name=chrony enabled=true state=started'
+```
+
+`-K` prompts for the remote become password and uses it for the selected hosts; never put that password in the inventory. If node passwords differ, add `--limit node1` (then `node2`, `node3`) and run one host at a time.
+
+Check r2d2 locally too; it is not a target in the `control` group. If it needs correction, use the same conditional actions locally: `sudo timedatectl set-timezone UTC`; if no supported daemon is active, install and enable Chrony with `sudo apt install -y chrony` and `sudo systemctl enable --now chrony`.
+
+Completion: all four systems resolve the same hostnames, use UTC, have a recognized NTP daemon active, and report a synchronized clock. If Chrony is the selected daemon, also check `chronyc tracking` and `chronyc sources -v`.
 
 ## Step 7 — Configure Kolla globals and generated passwords
 
