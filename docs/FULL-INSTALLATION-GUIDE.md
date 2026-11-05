@@ -525,6 +525,14 @@ Completion: deployment and configuration validation finish successfully, and the
 
 ## Step 10 — Configure the OpenStack CLI and run a small cloud test
 
+### 10.1 — Prepare the OpenStack client
+
+Run the Step 10 commands on the management VM as your normal user, in the Kolla virtual environment. Activate it if the prompt does not already show `(kolla-2026.2)`:
+
+```bash
+source "$HOME/.venvs/kolla-2026.2/bin/activate"
+```
+
 Install the matching OpenStack CLI in the same virtual environment:
 
 ```bash
@@ -532,42 +540,145 @@ python -m pip install python-openstackclient \
   -c https://releases.openstack.org/constraints/upper/2026.2
 ```
 
-Generate the client configuration and protect the copy in the operator’s home directory:
+Generate the client configuration on the management VM. If your inventory requires become, make sure the prompt is enabled in this terminal (see Step 8). This option is the literal word `true`, not your password:
 
 ```bash
+export ANSIBLE_BECOME_ASK_PASS=true
 kolla-ansible post-deploy -i /etc/kolla/multinode
+```
+
+Enter the sudo password at the prompt. **Stop if post-deploy fails.** Continue only after its recap has no failures and `/etc/kolla/clouds.yaml` exists. The following copy overwrites the destination; if it already exists, stop and protect any existing configuration before proceeding. Never display or share either copy: it contains credentials.
+
+The source may be owned by root. Copy it with `sudo`, setting the destination owner back to your normal management account:
+
+```bash
 install -d -m 700 "$HOME/.config/openstack"
-install -m 600 /etc/kolla/clouds.yaml "$HOME/.config/openstack/clouds.yaml"
-export OS_CLOUD=admin
-openstack token issue
+sudo install -m 600 -o "$USER" -g "$(id -gn)" /etc/kolla/clouds.yaml "$HOME/.config/openstack/clouds.yaml"
+export OS_CLOUD=kolla-admin
+```
+
+Check authentication without printing the token itself:
+
+```bash
+openstack token issue -f value -c expires
+```
+
+If authentication fails, stop and troubleshoot before running the remaining cloud checks. Token values, client configuration, and unredacted logs are secrets.
+
+```bash
 openstack service list
 openstack endpoint list
 openstack compute service list
 openstack network list
 ```
 
-For a workload test, first download a small test image from its publisher, verify its checksum, and store it outside this Git repository. Create a sandbox tenant network using an unused CIDR that does not overlap the management, VPN, or provider networks. Then create a tiny flavor, upload the image, and boot one test instance. Do not run Kolla’s `init-runonce` script blindly; its example networks and addresses may conflict with this lab’s actual network plan.
+### 10.2 — Download and verify the test image
 
-Example commands after setting `TENANT_CIDR` to a free private subnet and `IMAGE_FILE` to the verified image path:
+CirrOS is a small image suitable for a disposable smoke test. The commands below download it to your home directory, outside the Git repository, and compare it with the publisher's SHA-256 checksum. They require internet access. Existing image or checksum files are not overwritten; if verification fails, stop and investigate rather than uploading the image.
 
 ```bash
-export TENANT_CIDR="REPLACE_WITH_UNUSED_CIDR"
-export IMAGE_FILE="$HOME/images/verified-test-image.qcow2"
-test -f "$IMAGE_FILE" || { printf 'Image file not found: %s\n' "$IMAGE_FILE" >&2; exit 1; }
-openstack flavor create lab.tiny --vcpus 1 --ram 512 --disk 1
-openstack network create lab-private
-openstack subnet create lab-private-subnet \
-  --network lab-private --subnet-range "$TENANT_CIDR" --dhcp
-openstack image create lab-test-image \
-  --file "$IMAGE_FILE" --disk-format qcow2 --container-format bare --public
-openstack server create lab-smoke \
-  --flavor lab.tiny --image lab-test-image --network lab-private
-openstack server show lab-smoke
+mkdir -p "$HOME/images"
+cd "$HOME/images"
+if [ ! -f cirros-0.6.3-x86_64-disk.img ]; then
+  curl -fL -o cirros-0.6.3-x86_64-disk.img https://download.cirros-cloud.net/0.6.3/cirros-0.6.3-x86_64-disk.img
+fi
 ```
 
-Do not create a provider/external network until the Layer-2 switch, gateway, and address-allocation plan are explicit. A guest on the private overlay can boot without public/floating-IP connectivity.
+If the download reports an error, stop. Then obtain the checksum and verify the image:
 
-Completion: the admin token is issued through the VIP, service and endpoint lists return, and one small sandbox instance reaches `ACTIVE` on the private network.
+```bash
+if [ ! -f cirros-0.6.3-SHA256SUMS ]; then
+  curl -fL -o cirros-0.6.3-SHA256SUMS https://download.cirros-cloud.net/0.6.3/SHA256SUMS
+fi
+```
+
+```bash
+grep '  cirros-0.6.3-x86_64-disk.img$' cirros-0.6.3-SHA256SUMS | sha256sum -c -
+```
+
+The result must end in `OK`. The checksum detects a mismatch with the publisher's file; it is not an independent signature verification. Stop if the checksum download fails, or if verification does not say `OK`.
+
+### 10.3 — Create a private test network
+
+These commands create real OpenStack resources. They do not change the nodes' physical network interfaces. Like choosing a VMware port-group subnet, the address range must not overlap any management, provider, VPN, or other connected network.
+
+The example below uses `10.254.211.0/24`. Use it only after confirming it is unused across those networks; otherwise substitute a confirmed unused private IPv4 subnet in the subnet command. Check existing OpenStack networks and subnets first:
+
+```bash
+openstack network list
+openstack subnet list
+```
+
+If `lab-private` or `lab-private-subnet` already exists, inspect it instead of blindly creating a duplicate. Create the network:
+
+```bash
+openstack network create lab-private
+```
+
+Only if that succeeds, create its subnet and DHCP service:
+
+```bash
+openstack subnet create lab-private-subnet \
+  --network lab-private --subnet-range 10.254.211.0/24 --dhcp
+```
+
+Stop if either command fails. This network has no external router or floating IP; the following test checks VM boot, not internet access.
+
+### 10.4 — Create the VM size and upload the image
+
+A flavor is the VM size, similar to a VMware VM hardware specification. This one requests 1 vCPU, 512 MB RAM, and a 1 GB root disk. Check for existing names first; if either exists, inspect it rather than creating a duplicate:
+
+```bash
+openstack flavor list
+openstack image list
+```
+
+Create the flavor:
+
+```bash
+openstack flavor create lab.tiny --vcpus 1 --ram 512 --disk 1
+```
+
+After it succeeds, upload the verified image to Glance, the OpenStack image library. The image is private to this project, not public:
+
+```bash
+openstack image create lab-test-image \
+  --file "$HOME/images/cirros-0.6.3-x86_64-disk.img" \
+  --disk-format qcow2 --container-format bare --private
+```
+
+Confirm its status is `active` before proceeding:
+
+```bash
+openstack image show lab-test-image -c status
+```
+
+### 10.5 — Boot and check the test VM
+
+Check that a VM named `lab-smoke` does not already exist:
+
+```bash
+openstack server list
+```
+
+Create it using the flavor, image, and private network. `--wait` waits for the create operation to complete; do not rerun it just because the VM is still building.
+
+```bash
+openstack server create lab-smoke \
+  --flavor lab.tiny --image lab-test-image --network lab-private --wait
+```
+
+Check the final status:
+
+```bash
+openstack server show lab-smoke -c status -c addresses
+```
+
+The target status is `ACTIVE`. If the command fails or the VM reports `ERROR`, stop and investigate the redacted error; do not create another VM. `ACTIVE` confirms the VM boot request completed, but does not by itself prove guest connectivity. No SSH key or external connectivity is configured by this smoke test.
+
+Do not create a provider/external network until the Layer-2 switch, gateway, and address-allocation plan are explicit. Do not run Kolla's `init-runonce` blindly; its example networks and addresses may conflict with the real network plan.
+
+Completion: authentication, service and endpoint checks succeed, and the sandbox VM reaches `ACTIVE` on the private network.
 
 ## Step 11 — Add block storage only after choosing a backend
 
