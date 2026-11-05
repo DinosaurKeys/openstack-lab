@@ -157,6 +157,14 @@ Keep the virtual environment active for the remaining Kolla-Ansible commands. Th
 
 Completion: `ansible` and `kolla-ansible` run from the virtual environment, and `/etc/kolla/globals.yml`, `/etc/kolla/passwords.yml`, and `/etc/kolla/multinode` exist.
 
+### Where Ansible is used after Step 3
+
+- Step 4: Ansible can collect network facts, but the management-network cutover is performed one node at a time from a recovery console; losing SSH mid-change can strand a node.
+- Step 5: Ansible parses and tests the Kolla inventory after you configure it.
+- Step 6: A project playbook audits all four hosts and can optionally correct time settings with authorized privilege escalation.
+- Steps 8–9: Kolla-Ansible invokes its own Ansible playbooks to bootstrap, check, and deploy the nodes. Step 7 edits the management host's Kolla configuration first.
+- Steps 10–13: Use the OpenStack CLI, Kolla-Ansible, or Terraform as directed. Keep storage initialization and other destructive operations manual until devices and a recovery plan are approved.
+
 ## Step 4 — Plan and configure the node networks
 
 Kolla needs a management interface and a separate Neutron external interface. For this two-interface baseline:
@@ -276,7 +284,7 @@ ping -c 3 REPLACE_WITH_MANAGEMENT_GATEWAY
 
 Replace `REPLACE_WITH_MANAGEMENT_GATEWAY` with this node's actual numeric gateway address before running the ping. Accept the temporary configuration only when `mgmt0` has the planned management address, the default route uses `mgmt0` and the planned gateway, the gateway responds, and `provider0` is up with physical link detected (`LOWER_UP`). `provider0` must not have a configured IPv4 address; an automatic `fe80::` IPv6 link-local address alone is expected. Return to the `netplan try` prompt and press Enter to keep the settings only after these checks pass. Otherwise, do not accept; let the timer expire and keep the console open.
 
-After a successful cutover, verify SSH and Ansible connectivity from the management VM before changing the next node. If a try fails or times out, verify the runtime network actually reverted; do not assume the on-disk filenames were restored. Inspect the files and use the restore commands above to return to the original `.yaml` file set before rebooting or retrying. Repeat this procedure for each node, using its own MAC addresses and management address.
+After a successful cutover, verify SSH connectivity from the management VM using this node's new address and the Step 2 key before changing the next node. The Kolla inventory does not exist in configured form until Step 5; after Step 5, verify Ansible connectivity as well. If a try fails or times out, verify the runtime network actually reverted; do not assume the on-disk filenames were restored. Inspect the files and use the restore commands above to return to the original `.yaml` file set before rebooting or retrying. Repeat this procedure for each node, using its own MAC addresses and management address.
 
 ### Later management-address changes
 
@@ -291,7 +299,7 @@ NODE3_MGMT_IP node3
 MANAGEMENT_VM_IP manager
 ```
 
-Replace every `*_MGMT_IP` and `MANAGEMENT_VM_IP` token with the actual address chosen for that host. Confirm that `node1`, `node2`, `node3`, and `manager` resolve consistently on every machine.
+Replace every `*_MGMT_IP` and `MANAGEMENT_VM_IP` token with the actual address chosen for that host. Back up and inspect each host's `/etc/hosts` first. Replace an existing `127.0.1.1 node1` (or corresponding node name) mapping rather than adding a conflicting duplicate; preserve localhost and IPv6 entries. Confirm that `node1`, `node2`, `node3`, and `manager` resolve consistently on every machine.
 
 Completion: each node has stable management reachability, the USB/provider interface is connected to the intended switch without a configured provider-subnet address or default route, both interface names are consistent, and hostnames resolve consistently. An automatic IPv6 link-local address on the provider interface is expected.
 
@@ -361,7 +369,7 @@ Completion: each node appears in `control`, `network`, and `compute`; no upstrea
 
 Kolla-Ansible 2026.2 accepts any one active host time service from this list: `chrony`, `chronyd`, `ntp`, `ntpd`, or `systemd-timesyncd`. These are alternatives; you do not need to install all of them. On Ubuntu 24.04 LTS, `systemd-timesyncd` is normally enabled by default. Ubuntu changed the default to Chrony starting with 25.10. See [Ubuntu's time synchronization guide](https://ubuntu.com/server/docs/use-timedatectl-and-timesyncd/).
 
-Run the project playbook from the repository root on r2d2, with the Kolla virtual environment active. It checks hostname resolution, timezone, clock synchronization, and active time services on all three nodes and the management VM. Audit mode is read-only:
+On the management VM, clone this repository if it is not already present, change to its root directory, and activate the Kolla virtual environment. The project playbook checks hostname resolution, timezone, clock synchronization, and active time services on the `control` nodes and the upstream inventory's `deployment` group (localhost). Audit mode is read-only:
 
 ```bash
 ansible-playbook -i /etc/kolla/multinode \
@@ -376,11 +384,11 @@ If the audit finds the timezone is not UTC, or finds no supported time service a
 ```bash
 ansible-playbook -i /etc/kolla/multinode \
   ansible/playbooks/ensure-time-sync.yml \
-  -e '{"time_sync_apply": true}' \
+  -e '{"time_sync_apply": true, "ansible_become": true}' \
   --become --ask-become-pass
 ```
 
-`--ask-become-pass` (`-K`) prompts for the privilege-escalation password; never put it in the inventory. One password is used for the selected hosts. If host passwords differ, run the apply command with `--limit node1`, then `node2`, `node3`, and `localhost` (the management VM) separately.
+`--ask-become-pass` (`-K`) prompts for the privilege-escalation password; never put it in the inventory. One password is used for the selected hosts. If host passwords differ, run the apply command with `--limit node1`, then `node2`, `node3`, and `localhost` (the management VM) separately. Installing Chrony may replace a conflicting time-service package: review your distribution's package changes before applying. The install path requires working APT repositories and reachable time servers.
 
 The playbook is intentionally read-only by default. Its source is [`ansible/playbooks/ensure-time-sync.yml`](../ansible/playbooks/ensure-time-sync.yml). Completion means all four systems resolve each node name to its inventory address, use UTC, have one supported time service active, and report a synchronized clock.
 
@@ -418,6 +426,8 @@ Completion: the three required globals are set to verified values, the VIP is re
 ## Step 8 — Bootstrap node dependencies and run Kolla prechecks
 
 This is the installation step where Kolla prepares the Ubuntu hosts, including container runtime dependencies. It is not a substitute for the full installation procedure; it is Kolla’s required deployment gate.
+
+Kolla-Ansible runs its own Ansible playbooks against the inventory: no separate ad-hoc installation is needed for these dependencies. Bootstrap can change packages, networking-related host services and other host configuration; review the release's bootstrap documentation before running it. The installed Kolla CLI describes `--become` as requiring passwordless become and does not offer `--ask-become-pass`. Arrange an approved privilege-escalation method and verify it first; do not put passwords in inventory or chat. If that access is not available, stop here rather than bypassing the requirement.
 
 With the virtual environment active, run from the management VM:
 

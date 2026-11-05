@@ -25,7 +25,7 @@
     - name: Require node aliases to resolve to their inventory addresses
       ansible.builtin.assert:
         that:
-          - hostvars[item.item]['ansible_host'] in item.stdout
+          - hostvars[item.item]['ansible_host'] in (item.stdout_lines | map('split') | map('first') | list)
         fail_msg: "{{ item.item }} did not resolve to its inventory management address: {{ item.stdout }}"
       loop: "{{ host_resolution.results }}"
       loop_control:
