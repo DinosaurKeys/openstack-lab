@@ -455,20 +455,53 @@ Keep `/etc/kolla/passwords.yml` private and back it up securely; do not print it
 
 ## Step 8 — Bootstrap node dependencies and run Kolla prechecks
 
-This is the installation step where Kolla prepares the Ubuntu hosts, including container runtime dependencies. It is not a substitute for the full installation procedure; it is Kolla’s required deployment gate.
+**Run this step on the management VM, not separately on the nodes.** Kolla-Ansible is an Ansible-based deployment tool: it reads `/etc/kolla/multinode` to learn where the hosts are, then runs its own Ansible playbooks over SSH. `bootstrap-servers` installs and configures host dependencies; `prechecks` tests whether the hosts are ready. Bootstrap changes the hosts, so review the [host configuration reference](https://docs.openstack.org/kolla-ansible/2026.2/reference/deployment-and-bootstrapping/bootstrap-servers.html) and maintain console access before proceeding.
 
-Kolla-Ansible runs its own Ansible playbooks against the inventory: no separate ad-hoc installation is needed for these dependencies. Bootstrap can change packages, networking-related host services and other host configuration; review the release's bootstrap documentation before running it. The installed Kolla CLI describes `--become` as requiring passwordless become and does not offer `--ask-become-pass`. Arrange an approved privilege-escalation method and verify it first; do not put passwords in inventory or chat. If that access is not available, stop here rather than bypassing the requirement.
+### 8.1 — Understand SSH and sudo
 
-With the virtual environment active, run from the management VM:
+SSH authenticates your normal administrator account to a node. Installing packages and configuring system services also requires root privileges. Ansible calls the switch to root **become** (usually implemented with `sudo`). A successful SSH or `ping` test does not prove become works.
+
+For the interactive method below, the same become password must work on all selected hosts, including `localhost` if the inventory targets it. The password is entered at Ansible's terminal prompt; never put it in a command, environment variable, inventory, repository, or chat. This method does not grant passwordless sudo. Anyone with become privileges can make root-level changes, so secure the administrator and SSH accounts.
+
+Test become from the management VM with the virtual environment active:
+
+```bash
+ansible -i /etc/kolla/multinode 'control:deployment' \
+  -m ansible.builtin.command -a 'id -u' \
+  -e '{"ansible_become": true}' --ask-become-pass
+```
+
+Enter the sudo password at `BECOME password:`. Each of the three nodes and `localhost` should return `0` and `rc=0`. `id -u` only reports the effective user ID; the command module may label it `CHANGED` even though this probe makes no configuration changes. If any host fails, stop and fix its SSH, sudo permission or password before bootstrap. If passwords differ, one prompt cannot supply all of them: stop and arrange a secure, individually configured credential method rather than storing plaintext passwords. Do not proceed based only on SSH ping.
+
+### 8.2 — Tell Kolla's Ansible to prompt
+
+The Kolla 2026.2 CLI's `bootstrap-servers` command does not expose Ansible's `--ask-become-pass` (`-K`) option. Instead, set Ansible's prompt option **in the same management-VM terminal** before running Kolla:
+
+```bash
+export ANSIBLE_BECOME_ASK_PASS=true
+```
+
+Type `true` literally: it means “ask for a password,” not the password itself. This command normally prints nothing. The setting lasts only in the current shell and its child processes; repeat it when starting a new terminal. Ansible asks for the password when a Kolla playbook starts. Enter it only at the prompt, and repeat if a later Kolla command prompts again. To remove this setting from the current shell after your work, run `unset ANSIBLE_BECOME_ASK_PASS`.
+
+### 8.3 — Bootstrap, then check
+
+First run bootstrap by itself:
 
 ```bash
 kolla-ansible bootstrap-servers -i /etc/kolla/multinode
+```
+
+At the password prompt, enter the same become password you tested. Wait for the command to finish. It may install packages and change host configuration; it is not a read-only check. If the recap shows any failed or unreachable hosts, stop, examine the error, and do not proceed to prechecks.
+
+Only after bootstrap succeeds, run:
+
+```bash
 kolla-ansible prechecks -i /etc/kolla/multinode
 ```
 
-Stop if either command fails. Read the exact failing task, correct the underlying OS, inventory, DNS, or network issue, and rerun the failed command. Do not work around a failed precheck by disabling it.
+Enter the password again if prompted. Stop if prechecks fail; correct the underlying issue and rerun them. Warnings about hyphens in upstream group names are not by themselves a reason to rename those groups.
 
-Completion: both commands exit successfully for all three target nodes.
+**Step 8 is complete when:** bootstrap and prechecks both finish successfully. Only then move to Step 9. Keep this same terminal's prompt setting for later Kolla commands, or set it again in a new terminal.
 
 ## Step 9 — Deploy OpenStack
 
