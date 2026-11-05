@@ -493,13 +493,15 @@ kolla-ansible bootstrap-servers -i /etc/kolla/multinode
 
 At the password prompt, enter the same become password you tested. Wait for the command to finish. It may install packages and change host configuration; it is not a read-only check. If the recap shows any failed or unreachable hosts, stop, examine the error, and do not proceed to prechecks.
 
-Only after bootstrap succeeds, run:
+Only after bootstrap succeeds, run prechecks. For the default `quay.io/openstack.kolla` test images used by this learning lab, the 2026.2 CLI requires the explicit `--use-test-images` acknowledgment:
 
 ```bash
-kolla-ansible prechecks -i /etc/kolla/multinode
+kolla-ansible prechecks -i /etc/kolla/multinode --use-test-images
 ```
 
-Enter the password again if prompted. Stop if prechecks fail; correct the underlying issue and rerun them. Warnings about hyphens in upstream group names are not by themselves a reason to rename those groups.
+These are testing images, not a production image recommendation. If using a different, approved image registry, review its settings and run the prechecks appropriate to that registry instead of blindly accepting the test-image option. The option applies to prechecks; it does not confirm images are available or guarantee deployment will succeed.
+
+Enter the password again if prompted. Stop if prechecks fail; correct the underlying issue and rerun them. Warnings about hyphens in upstream group names are not by themselves a reason to rename those groups. Kolla/Ansible output can contain service credentials even in skipped task details: do not post full logs. If asking for help, first redact passwords, tokens, cookies, private keys and authorization headers, including encoded credentials; share only the relevant failed task and PLAY RECAP.
 
 **Step 8 is complete when:** bootstrap and prechecks both finish successfully. Only then move to Step 9. Keep this same terminal's prompt setting for later Kolla commands, or set it again in a new terminal.
 
