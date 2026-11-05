@@ -18,6 +18,8 @@ Official references used by this procedure:
 - [Kolla-Ansible Cinder Guide](https://docs.openstack.org/kolla-ansible/2026.2/reference/storage/cinder-guide.html)
 - [Kolla-Ansible 2026.2 Grafana Guide](https://docs.openstack.org/kolla-ansible/2026.2/reference/logging-and-monitoring/grafana-guide.html)
 - [Netplan MAC matching and interface naming](https://netplan.readthedocs.io/en/stable/matching-interface-by-mac-address/)
+- [Netplan YAML reference](https://netplan.readthedocs.io/en/stable/netplan-yaml/)
+- [Netplan command reference](https://netplan.readthedocs.io/en/stable/cli/)
 - [Ubuntu Server installation tutorial](https://ubuntu.com/tutorials/install-ubuntu-server)
 
 ## Target installation
@@ -160,7 +162,7 @@ Completion: `ansible` and `kolla-ansible` run from the virtual environment, and 
 Kolla needs a management interface and a separate Neutron external interface. For this two-interface baseline:
 
 - The management NIC carries SSH, Ansible, API/database traffic, and the default Neutron tunnel traffic.
-- The second NIC connects to the shared lab switch and is reserved for Neutron provider networking. It must be active at Layer 2 but have no host IP address; Kolla/Neutron will attach it to the external bridge.
+- The second NIC connects to the shared lab switch and is reserved for Neutron provider networking. It must be active at Layer 2 with no configured provider-subnet address or default route; an automatic IPv6 link-local address may still appear. Kolla/Neutron will attach it to the external bridge.
 - This isolated provider network does not automatically have Internet access or a gateway. Add a separately designed upstream connection if floating IPs or external connectivity are required.
 - If you require a separate tunnel/underlay network as well as management and provider networks, add a third interface per node before proceeding.
 
@@ -175,7 +177,7 @@ for p in /sys/class/net/*/address; do printf '%s ' "${p%/address}"; cat "$p"; do
 
 On every host, use consistent names `mgmt0` and `provider0`; Kolla globals use those names on all three nodes. If the interface names differ across hosts, rename each adapter with a Netplan `match.macaddress` rule. Do not copy a MAC address from another node.
 
-On each node, prepare `/etc/netplan/90-openstack-lab.yaml` from this template. Replace every `REPLACE_...` value and change the management address for that node. Preserve the correct existing gateway, DNS, and any required LAN routes; do not assume the example gateway is correct:
+On each node, prepare the following YAML as an inactive draft first; the procedure below shows how to review and install it. Replace every `REPLACE_...` value with data inspected on that same node, including that node's management address. Preserve the correct existing gateway, DNS, and any required LAN routes; do not assume the example gateway is correct:
 
 ```yaml
 network:
@@ -202,14 +204,85 @@ network:
       optional: true
 ```
 
-Back up the installer-created Netplan file. Either edit it in place or disable its old entries only after the replacement fully configures the management route and DNS; do not leave two Netplan files matching the same NIC. Validate each host’s YAML and apply from a physical/virtual console or with another recovery path:
+### Back up the current configuration
+
+Sequence to remember: inspect → back up → draft and review → install the new file → park the old file → generate → try → verify before moving to the next node.
+
+Work on one node at a time. These commands assume that `/etc/netplan/50-cloud-init.yaml` is the existing file for this node; confirm the filename first and use the actual existing path consistently if it differs. Also check that no other active `/etc/netplan/*.yaml` file defines the same interfaces. On that node, create and verify a backup before changing any Netplan files. If this backup path already exists, stop and inspect it before rerunning the copy; `cp -a` can replace an existing destination.
 
 ```bash
+backup="/root/50-cloud-init.yaml.pre-openstack.$(hostname)"
+sudo cp -a /etc/netplan/50-cloud-init.yaml "$backup"
+sudo cmp -s /etc/netplan/50-cloud-init.yaml "$backup" && echo "Backup verified: $backup"
+```
+
+`$(hostname)` runs the `hostname` command and inserts its output into the path. The first line stores that path in the `backup` shell variable; `"$backup"` uses the stored path in the following commands. The comparison prints the confirmation only when the backup matches the original. If it does not print `Backup verified`, stop.
+
+### Create and review an inactive draft
+
+Create the draft in the current user's home directory, not in `/etc/netplan`. Netplan will not use this `.draft` file, so you can review it before it affects networking. The `~` means the current user's home directory.
+
+```bash
+nano ~/90-openstack-lab.yaml.draft
+```
+
+Paste the YAML template above, save it in nano with Ctrl+O, Enter, and Ctrl+X, then display the saved file and check the MAC addresses, management address, gateway, DNS, and indentation:
+
+```bash
+cat ~/90-openstack-lab.yaml.draft
+```
+
+Do not proceed until the values match this node's inspected network data.
+
+### Stage the replacement and validate it
+
+After reviewing the draft, run these commands on that same node:
+
+```bash
+sudo install -o root -g root -m 600 ~/90-openstack-lab.yaml.draft /etc/netplan/90-openstack-lab.yaml
+sudo mv /etc/netplan/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml.disabled
 sudo netplan generate
+```
+
+`install` copies the draft and sets its owner, group, and permissions; it does not install a package. `mv` renames the old file rather than deleting it; the `.disabled` suffix keeps it out of Netplan's active `.yaml` files. `netplan generate` validates the YAML and builds backend configuration, but does not apply the network change. If any command reports an error, stop. Do not reboot while the new file is staged but not tested.
+
+If `netplan generate` fails, restore the file set before retrying:
+
+```bash
+sudo mv /etc/netplan/90-openstack-lab.yaml /etc/netplan/90-openstack-lab.yaml.failed
+sudo mv /etc/netplan/50-cloud-init.yaml.disabled /etc/netplan/50-cloud-init.yaml
+sudo netplan generate
+```
+
+Correct the draft, review it again, and repeat the staging steps only after the old file is restored. Keep the verified backup.
+
+### Test the cutover from a recovery console
+
+Before applying the new network, confirm physical or virtual console access to this exact node; SSH alone is not an adequate recovery path. Run `netplan try` from that console and keep its countdown prompt open:
+
+```bash
 sudo netplan try
 ```
 
-Accept the temporary configuration only after confirming the management address and SSH path still work. Once all three nodes use `mgmt0` and `provider0`, add the host entries to `/etc/hosts` on all four machines, using the actual management VM address:
+While the prompt waits, use a second terminal on the node (or another SSH session from the management VM) to check:
+
+```bash
+ip -brief link
+ip -brief address
+ip route
+resolvectl dns
+ping -c 3 REPLACE_WITH_MANAGEMENT_GATEWAY
+```
+
+Replace `REPLACE_WITH_MANAGEMENT_GATEWAY` with this node's actual numeric gateway address before running the ping. Accept the temporary configuration only when `mgmt0` has the planned management address, the default route uses `mgmt0` and the planned gateway, the gateway responds, and `provider0` is up with physical link detected (`LOWER_UP`). `provider0` must not have a configured IPv4 address; an automatic `fe80::` IPv6 link-local address alone is expected. Return to the `netplan try` prompt and press Enter to keep the settings only after these checks pass. Otherwise, do not accept; let the timer expire and keep the console open.
+
+After a successful cutover, verify SSH and Ansible connectivity from the management VM before changing the next node. If a try fails or times out, verify the runtime network actually reverted; do not assume the on-disk filenames were restored. Inspect the files and use the restore commands above to return to the original `.yaml` file set before rebooting or retrying. Repeat this procedure for each node, using its own MAC addresses and management address.
+
+### Later management-address changes
+
+The copy-and-rename steps above are a one-time migration per node. For a later address change, edit that node's active `/etc/netplan/90-openstack-lab.yaml`, make a fresh backup as appropriate, run `sudo netplan generate`, then use `sudo netplan try` from a recovery console and repeat the checks. Do not repeat the migration of `50-cloud-init.yaml` unless deliberately changing the Netplan file layout again. After Kolla-Ansible is deployed, also update inventory, host mappings, and service configuration that reference the old address.
+
+After all three nodes pass the network checks, add the host entries to `/etc/hosts` on all four machines, using the actual management VM address:
 
 ```text
 NODE1_MGMT_IP node1
@@ -220,7 +293,7 @@ MANAGEMENT_VM_IP manager
 
 Replace every `*_MGMT_IP` and `MANAGEMENT_VM_IP` token with the actual address chosen for that host. Confirm that `node1`, `node2`, `node3`, and `manager` resolve consistently on every machine.
 
-Completion: each node has stable management reachability, the USB/provider interface is connected to the intended switch without a host IP, both node interface names are consistent, and hostnames resolve consistently.
+Completion: each node has stable management reachability, the USB/provider interface is connected to the intended switch without a configured provider-subnet address or default route, both interface names are consistent, and hostnames resolve consistently. An automatic IPv6 link-local address on the provider interface is expected.
 
 ## Step 5 — Configure the Kolla multinode inventory
 
@@ -310,7 +383,7 @@ kolla_internal_vip_address: "REPLACE_WITH_RESERVED_MANAGEMENT_VIP"
 ```
 
 - `network_interface` is the management NIC named `mgmt0` and carries each node’s stable management address.
-- `neutron_external_interface` is the provider NIC named `provider0`; it must be connected to the intended switch and have no host IP.
+- `neutron_external_interface` is the provider NIC named `provider0`; it must be connected to the intended switch and have no configured provider-subnet address or default route. An automatic IPv6 link-local address may still appear.
 - `enable_neutron_provider_networks` allows Neutron provider networks on that physical NIC.
 - `kolla_internal_vip_address` must be an unused, reserved address on the management network.
 - The stock inventory must have all three nodes in `network`, so Kolla can run the HAProxy/Keepalived endpoints across the network group.

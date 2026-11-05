@@ -35,8 +35,10 @@ The three physical nodes are intentionally multi-role. Kolla-Ansible uses the th
                        Neutron provider network
 
 Management LAN carries SSH, APIs, service traffic, and (in the two-NIC
-baseline) Neutron tunnel traffic. The provider NIC has no host IP. Reserve
-a free internal VIP on the management subnet before deployment.
+baseline) Neutron tunnel traffic. The provider NIC has no configured
+provider-subnet address or default route; an automatic IPv6 link-local
+address may still appear. Reserve a free internal VIP on the management subnet
+before deployment.
 ```
 
 ## Network design
@@ -44,7 +46,7 @@ a free internal VIP on the management subnet before deployment.
 The baseline assumes two interfaces per physical node:
 
 1. Management interface: stable node address, SSH, Ansible, service/API traffic, and the default overlay tunnel path.
-2. Provider interface: connected to the shared lab switch, no host IP/default route, reserved for Neutron provider networking.
+2. Provider interface: connected to the shared lab switch, no configured provider-subnet address/default route, reserved for Neutron provider networking. An automatic IPv6 link-local address may appear.
 
 A provider network on an isolated switch is still isolated; it does not create Internet access or floating-IP reachability without an upstream router and an explicit address plan. If management, overlay tunnels, and provider traffic must be isolated from one another, use three physical interfaces per node and update the design before deployment.
 

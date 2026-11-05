@@ -38,7 +38,7 @@ _Visual overview only. Follow the [Full Installation Guide](docs/FULL-INSTALLATI
 
 - Replace each `NODE*_MGMT_IP` placeholder with a unique management address reserved outside DHCP.
 - The guide requires a reserved internal VIP; choose an unused address on the management subnet before deployment.
-- The baseline network design uses the management interface for host/API traffic and tunnels, and a separate provider interface for Neutron Layer-2 networking. The provider NIC must not have a host IP. Without an upstream router, that provider network is isolated and does not provide Internet access or floating-IP reachability.
+- The baseline network design uses the management interface for host/API traffic and tunnels, and a separate provider interface for Neutron Layer-2 networking. The provider NIC must not have a configured provider-subnet address or default route; an automatic IPv6 link-local address may still appear. Without an upstream router, that provider network is isolated and does not provide Internet access or floating-IP reachability.
 - If you want management, tunnel, and provider traffic on three separate physical networks, add a third NIC per node before following the network procedure.
 - Do not initialize or erase disks for Cinder until a dedicated device has been positively identified and the chosen storage backend and recovery plan are documented. Local LVM is not a replicated, highly available storage backend.
 - Never commit passwords, private keys, generated Kolla passwords, cloud credentials, Terraform state, or local evidence.
