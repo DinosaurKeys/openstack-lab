@@ -394,7 +394,35 @@ The playbook is intentionally read-only by default. Its source is [`ansible/play
 
 ## Step 7 — Configure Kolla globals and generated passwords
 
-Edit `/etc/kolla/globals.yml`. This example assumes Step 4 created the common interface names `mgmt0` and `provider0`, and the VIP was reserved before deployment:
+**Where:** Do this entire step on the management VM, not on each node. `/etc/kolla/globals.yml` tells Kolla-Ansible how to configure the nodes later; `/etc/kolla/passwords.yml` holds the generated service secrets. This step does not deploy OpenStack.
+
+### 7.1 — Confirm the network details
+
+Before editing, confirm that Step 4 established the same interface names on all three nodes. In the examples below, `mgmt0` is the management interface, and `provider0` is the separate provider-network interface. If you selected different names, use your verified names instead.
+
+Choose a virtual IP (VIP) on the management subnet. This is a shared address used to reach OpenStack endpoints; it is **not** the address of a node or the management VM. Reserve it in the network's address plan, outside the DHCP allocation pool or through an appropriate reservation, and verify it is not assigned to another device. An unanswered ping alone does not prove an address is unused. Do not continue until the VIP and interface names are confirmed.
+
+### 7.2 — Back up and edit the settings
+
+On the management VM, with the Kolla virtual environment active, first create a backup. If the backup already exists, stop and inspect it rather than overwriting it:
+
+```bash
+if [ -e /etc/kolla/globals.yml.pre-step7 ]; then
+  printf '%s\n' 'Backup already exists; inspect it before continuing.'
+else
+  cp -a /etc/kolla/globals.yml /etc/kolla/globals.yml.pre-step7 && \
+    cmp -s /etc/kolla/globals.yml /etc/kolla/globals.yml.pre-step7 && \
+    printf '%s\n' 'Backup verified.'
+fi
+```
+
+Continue only if the backup is verified. Open the file on the management VM:
+
+```bash
+nano /etc/kolla/globals.yml
+```
+
+In nano, use Ctrl+W to find each setting below. Edit an existing setting or uncomment its line by removing the leading `#`; if it is absent, add it. Keep only **one active line per setting**. Replace the VIP placeholder with the address you reserved; leave the other lines in the file intact.
 
 ```yaml
 kolla_base_distro: "ubuntu"
@@ -404,24 +432,26 @@ enable_neutron_provider_networks: true
 kolla_internal_vip_address: "REPLACE_WITH_RESERVED_MANAGEMENT_VIP"
 ```
 
-- `network_interface` is the management NIC named `mgmt0` and carries each node’s stable management address.
-- `neutron_external_interface` is the provider NIC named `provider0`; it must be connected to the intended switch and have no configured provider-subnet address or default route. An automatic IPv6 link-local address may still appear.
-- `enable_neutron_provider_networks` allows Neutron provider networks on that physical NIC.
-- `kolla_internal_vip_address` must be an unused, reserved address on the management network.
-- The stock inventory must have all three nodes in `network`, so Kolla can run the HAProxy/Keepalived endpoints across the network group.
+- `kolla_base_distro` selects Ubuntu-based Kolla images.
+- `network_interface` selects the nodes' management interface.
+- `neutron_external_interface` selects their separate provider interface; it must not have a configured provider-subnet address or default route.
+- `enable_neutron_provider_networks` enables Neutron provider networks.
+- `kolla_internal_vip_address` is the reserved shared management-network VIP.
 
-The Step 4 Netplan configuration gives these interfaces consistent names on every node. If you choose different names, update this file to match them exactly on all hosts before deployment.
+Save with Ctrl+O, press Enter, then exit with Ctrl+X. Reopen the file if needed and check the five settings, spelling, indentation and the VIP. Confirm the `network` inventory group includes all three nodes. Do not paste passwords or other secrets into chat or Git.
 
-Generate Kolla secrets and restrict the file permissions:
+### 7.3 — Generate service passwords
+
+On the management VM, still in the Kolla virtual environment, generate any missing Kolla service passwords and restrict the file permissions:
 
 ```bash
 kolla-genpwd
 chmod 600 /etc/kolla/passwords.yml
 ```
 
-Do not copy `/etc/kolla/passwords.yml` into the repository or include its contents in evidence. Kolla’s quickstart uses the release-matched container images and default service set; enable optional services only in a separate, documented change after the base deployment is healthy.
+Keep `/etc/kolla/passwords.yml` private and back it up securely; do not print it, copy it into Git, or share its contents. Preserve existing deployment passwords on reruns; don't replace or regenerate them blindly for an existing cloud.
 
-Completion: the three required globals are set to verified values, the VIP is reserved, and generated passwords are stored only in `/etc/kolla/passwords.yml`.
+**Step 7 is complete when:** the five settings use the verified interface names and reserved VIP, the globals backup is verified, and service passwords are generated and protected on the management VM. No node configuration is applied until a later Kolla-Ansible command.
 
 ## Step 8 — Bootstrap node dependencies and run Kolla prechecks
 
