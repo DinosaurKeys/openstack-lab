@@ -299,6 +299,15 @@ Completion: each node has stable management reachability, the USB/provider inter
 
 Edit `/etc/kolla/multinode`, starting from the copied upstream inventory. Put all three nodes in each of the `control`, `network`, and `compute` groups. Keep the upstream child-group mappings, especially the load balancer mapping to the network group.
 
+Before changing the inventory, make and verify a backup on the management VM:
+
+```bash
+cp -a /etc/kolla/multinode /etc/kolla/multinode.pre-step5
+cmp -s /etc/kolla/multinode /etc/kolla/multinode.pre-step5 && echo "Inventory backup verified"
+```
+
+The first command preserves a copy; the second prints confirmation only when the two files match. Use `sudo` only if the current user does not own `/etc/kolla`.
+
 The upstream file contains active example hosts such as `control01`, `network01`, `compute01`, `monitoring01`, and `storage01`. Replace every active example hostname with a real host from this lab or remove that entry if the optional role is not enabled; never leave these sample names for Ansible to target. Keep the upstream group sections and child-group mappings. For the base deployment, use the three physical nodes in the core groups and leave `monitoring` and `storage` host entries empty until Step 13 for monitoring and Step 11 for storage, respectively.
 
 Edit the corresponding sections in the copied inventory as follows:
@@ -339,8 +348,10 @@ Check that Ansible sees exactly three nodes in all three roles and that SSH work
 
 ```bash
 ansible-inventory -i /etc/kolla/multinode --graph
-ansible -i /etc/kolla/multinode all -m ping
+ansible -i /etc/kolla/multinode control -m ping -e '{"ansible_become": false}'
 ```
+
+The `control` group is the three physical nodes, so the local deployment host is not included in this SSH test. The temporary `ansible_become` override is only for the non-privileged ping check; Kolla deployment tasks still need the approved privilege-escalation method.
 
 Ansible may warn about hyphens in the upstream group names. Preserve those release-provided names and mappings; do not rename groups to silence the warning.
 
