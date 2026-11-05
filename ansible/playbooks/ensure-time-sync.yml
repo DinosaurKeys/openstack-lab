@@ -1,0 +1,123 @@
+---
+- name: Verify hostnames and time synchronization; configure only when requested
+  hosts: control:deployment
+  gather_facts: false
+  vars:
+    time_sync_apply: false
+    supported_ntp_units:
+      - chrony
+      - chronyd
+      - ntp
+      - ntpd
+      - systemd-timesyncd
+
+  tasks:
+    - name: Resolve each node alias from this host
+      ansible.builtin.command:
+        cmd: "getent hosts {{ item }}"
+      loop:
+        - node1
+        - node2
+        - node3
+      register: host_resolution
+      changed_when: false
+
+    - name: Require node aliases to resolve to their inventory addresses
+      ansible.builtin.assert:
+        that:
+          - hostvars[item.item]['ansible_host'] in item.stdout
+        fail_msg: "{{ item.item }} did not resolve to its inventory management address: {{ item.stdout }}"
+      loop: "{{ host_resolution.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read the current timezone
+      ansible.builtin.command:
+        cmd: timedatectl show -p Timezone --value
+      register: timezone_before
+      changed_when: false
+
+    - name: Read the current clock synchronization state
+      ansible.builtin.command:
+        cmd: timedatectl show -p NTPSynchronized --value
+      register: sync_before
+      changed_when: false
+
+    - name: Check for a supported active NTP service
+      ansible.builtin.command:
+        cmd: "systemctl is-active {{ supported_ntp_units | join(' ') }}"
+      register: ntp_services_before
+      changed_when: false
+      failed_when: false
+
+    - name: Set the timezone to UTC when applying changes
+      ansible.builtin.command:
+        cmd: timedatectl set-timezone UTC
+      when:
+        - time_sync_apply | bool
+        - (timezone_before.stdout | trim) not in ['UTC', 'Etc/UTC']
+
+    - name: Install Chrony when no supported NTP service is active
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+        update_cache: true
+      when:
+        - time_sync_apply | bool
+        - ntp_services_before.rc != 0
+
+    - name: Enable and start Chrony when no supported NTP service is active
+      ansible.builtin.systemd_service:
+        name: chrony
+        enabled: true
+        state: started
+      when:
+        - time_sync_apply | bool
+        - ntp_services_before.rc != 0
+
+    - name: Wait for the clock to synchronize after applying changes
+      ansible.builtin.command:
+        cmd: timedatectl show -p NTPSynchronized --value
+      register: sync_after_apply
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: (sync_after_apply.stdout | trim) == 'yes'
+      when: time_sync_apply | bool
+
+    - name: Read the final timezone
+      ansible.builtin.command:
+        cmd: timedatectl show -p Timezone --value
+      register: timezone_after
+      changed_when: false
+
+    - name: Read the final clock synchronization state
+      ansible.builtin.command:
+        cmd: timedatectl show -p NTPSynchronized --value
+      register: sync_after
+      changed_when: false
+
+    - name: Recheck supported active NTP services
+      ansible.builtin.command:
+        cmd: "systemctl is-active {{ supported_ntp_units | join(' ') }}"
+      register: ntp_services_after
+      changed_when: false
+      failed_when: false
+
+    - name: Report the resulting time-sync state
+      ansible.builtin.debug:
+        msg:
+          - "{{ inventory_hostname }} timezone={{ timezone_after.stdout | trim }}"
+          - "{{ inventory_hostname }} NTPSynchronized={{ sync_after.stdout | trim }}"
+          - "{{ inventory_hostname }} NTP service status={{ ntp_services_after.stdout_lines | join(', ') }}"
+
+    - name: Require UTC and a synchronized clock with a supported active service
+      ansible.builtin.assert:
+        that:
+          - (timezone_after.stdout | trim) in ['UTC', 'Etc/UTC']
+          - (sync_after.stdout | trim) == 'yes'
+          - ntp_services_after.rc == 0
+        fail_msg: >-
+          Time prerequisites are not met. Review the reported state; if you
+          intend to configure the host, rerun with time_sync_apply=true and
+          Ansible become enabled.
