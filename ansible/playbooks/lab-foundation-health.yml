@@ -1,0 +1,97 @@
+---
+# Run on the deployment host (sudo password is prompted locally):
+# ansible-playbook -i /etc/kolla/multinode ansible/playbooks/lab-foundation-health.yml -K
+# This is an optional, read-only local-service audit, not a quorum test.
+- name: Inspect foundation services on their inventory members
+  hosts: mariadb:rabbitmq
+  gather_facts: false
+  become: true
+  ignore_unreachable: true
+  vars:
+    foundation_services: "{{ (['mariadb'] if inventory_hostname in groups.get('mariadb', []) else []) + (['rabbitmq'] if inventory_hostname in groups.get('rabbitmq', []) else []) }}"
+  tasks:
+    - name: Read only container state and health
+      ansible.builtin.command:
+        argv: [docker, inspect, '--format', '{% raw %}{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}{% endraw %}', '{{ item }}']
+      loop: "{{ foundation_services }}"
+      register: foundation_containers
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Find MariaDB healthcheck configuration inside container
+      ansible.builtin.command:
+        argv: [docker, exec, mariadb, test, -r, '{{ item }}']
+      loop: [/etc/mysql/healthcheck.cnf, /etc/healthcheck.cnf]
+      register: foundation_configs
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: "'mariadb' in foundation_services"
+
+    - name: Run MariaDB local healthcheck
+      ansible.builtin.command:
+        argv: [docker, exec, mariadb, /usr/bin/healthcheck.sh, --defaults-file, '{{ item.item }}', --connect, --galera_online]
+      loop: "{{ foundation_configs.results | default([]) }}"
+      when: item.rc | default(1) == 0
+      register: foundation_mariadb_check
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Run RabbitMQ local application diagnostic
+      ansible.builtin.command:
+        argv: [docker, exec, rabbitmq, rabbitmq-diagnostics, -q, check_running]
+      when: "'rabbitmq' in foundation_services"
+      register: foundation_rabbit_check
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+- name: Summarize without displaying command output
+  hosts: localhost
+  gather_facts: false
+  become: false
+  vars:
+    ansible_become: false
+    foundation_groups: [mariadb, rabbitmq]
+  tasks:
+    - name: Report each expected service member
+      ansible.builtin.debug:
+        msg:
+          service: "{{ item.0 }}"
+          host: "{{ item.1 }}"
+          status: >-
+            {% set h = hostvars[item.1] %}
+            {% set records = h.foundation_containers.results | default([]) | selectattr('item', 'equalto', item.0) | list %}
+            {% set c = records[0] if records | length else {} %}
+            {% set checks = h.foundation_mariadb_check.results | default([]) | selectattr('rc', 'defined') | list if item.0 == 'mariadb' else [h.foundation_rabbit_check | default({})] %}
+            {% if c.unreachable | default(false) or c.rc is not defined %}BLOCKED (host unreachable or privilege/command unavailable)
+            {% elif c.rc != 0 and 'no such object' in (c.stderr | default('') | lower) %}FAIL (container absent)
+            {% elif c.rc != 0 %}BLOCKED (permission denied or Docker unavailable)
+            {% elif c.stdout.split() | length != 2 %}BLOCKED (container state unavailable)
+            {% elif c.stdout.split()[0] != 'running' %}FAIL (container not running)
+            {% elif c.stdout.split()[1] == 'starting' %}BLOCKED (container healthcheck is still starting)
+            {% elif c.stdout.split()[1] == 'unhealthy' %}FAIL (container unhealthy)
+            {% elif c.stdout.split()[1] not in ['healthy', 'none'] %}BLOCKED (unknown container health)
+            {% elif checks | length == 0 or checks[0].rc is not defined %}BLOCKED (application diagnostic unavailable)
+            {% elif checks | selectattr('rc', 'equalto', 0) | list | length > 0 %}PASS (local diagnostic; Docker health {{ c.stdout.split()[1] }})
+            {% elif checks | selectattr('rc', 'in', [125, 126, 127]) | list | length > 0 %}BLOCKED (application diagnostic unavailable)
+            {% elif checks | selectattr('stderr', 'defined') | selectattr('stderr', 'search', '(?i)permission denied|not found|no such file') | list | length > 0 %}BLOCKED (application diagnostic unavailable)
+            {% else %}FAIL (application diagnostic failed){% endif %}
+      loop: "{{ foundation_groups | product((groups.get('mariadb', []) + groups.get('rabbitmq', [])) | unique | list) | selectattr('1', 'in', groups.get('all', [])) | list }}"
+      when: item.1 in groups.get(item.0, [])
+      register: foundation_report
+
+    - name: State audit scope
+      ansible.builtin.debug:
+        msg: 'Galera primary/synced/cluster size and RabbitMQ cluster membership/quorum: NOT CHECKED. Local PASS does not establish cluster quorum.'
+
+    - name: Fail closed when any expected member is missing or not PASS
+      ansible.builtin.assert:
+        that:
+          - groups.get('mariadb', []) | length > 0
+          - groups.get('rabbitmq', []) | length > 0
+          - foundation_report.results | rejectattr('skipped', 'defined') | selectattr('msg.status', 'match', '^\\s*PASS\\b') | list | length == (groups.get('mariadb', []) | length + groups.get('rabbitmq', []) | length)
+        fail_msg: 'FAIL or BLOCKED: audit incomplete or a service is not ready; see sanitized results above.'
+        success_msg: 'PASS: all expected members passed local checks only; cluster quorum not checked.'

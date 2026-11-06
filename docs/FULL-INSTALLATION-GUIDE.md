@@ -739,6 +739,10 @@ Keep the dashboards and endpoints on the management network unless a separate, s
 
 Completion: Grafana and Prometheus are reachable through the intended management path, targets are up, and the dashboards show current host/service data.
 
+## Operations — Shutdown, power-on and recovery
+
+For the recurring operator procedure after installation, see [Shutdown, power-on and recovery](SHUTDOWN-AND-RECOVERY.md). It explains safe boundaries, the automated health checks, and what to do when the database or an API is unavailable. This is separate from the numbered installation steps.
+
 ## Final completion checklist
 
 - [ ] Ubuntu Server 24.04 LTS is installed on the management VM and all three nodes.
