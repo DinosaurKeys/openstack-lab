@@ -54,6 +54,24 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertIn('PASS', output)
 
+    def test_network_agent_boolean_admin_state_is_supported(self):
+        def runner(args, **kwargs):
+            if 'agent' in args:
+                return result(json.dumps([{'Alive': True, 'State': True}]))
+            return fake_run(args, **kwargs)
+        code, output = self.dashboard(runner)
+        self.assertEqual(code, 0, output)
+        self.assertIn('PASS cloud reported network agent rows', output)
+
+    def test_network_agent_boolean_disabled_needs_review(self):
+        def runner(args, **kwargs):
+            if 'agent' in args:
+                return result(json.dumps([{'Alive': True, 'State': False}]))
+            return fake_run(args, **kwargs)
+        code, output = self.dashboard(runner)
+        self.assertNotEqual(code, 0)
+        self.assertIn('REVIEW cloud reported network agent rows', output)
+
     def test_inventory_error_is_blocked_and_redacted(self):
         code, output = self.dashboard(lambda *a, **k: result(code=1, stderr='password=supersecret'))
         self.assertNotEqual(code, 0)

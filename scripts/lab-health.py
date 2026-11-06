@@ -156,7 +156,7 @@ def main(argv=None):
                     alive = item.get('Alive', item.get('alive'))
                     state = 'up' if alive is True or str(alive).lower() in ('true', 'yes', ':-)') else 'down' if alive is False or str(alive).lower() in ('false', 'no', 'xxx') else ''
                     admin = str(item.get('State', item.get('state', ''))).lower()
-                    admin = {'up': 'enabled', 'down': 'disabled'}.get(admin, admin)
+                    admin = {'up': 'enabled', 'down': 'disabled', 'true': 'enabled', 'false': 'disabled'}.get(admin, admin)
                 else:
                     state = str(item.get('State', item.get('state', ''))).lower()
                     admin = str(item.get('Status', item.get('status', ''))).lower()

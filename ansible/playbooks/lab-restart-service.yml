@@ -1,0 +1,277 @@
+---
+- name: Validate requested restart on the controller
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require an exact eligible inventory alias
+      ansible.builtin.assert:
+        that:
+          - recovery_target is defined
+          - recovery_target is string
+          - recovery_target != 'localhost'
+          - recovery_target in (groups.get('control', []) + groups.get('compute', []) + groups.get('network', []) + groups.get('storage', []))
+          - recovery_target is match('^[A-Za-z0-9_.-]+$')
+        fail_msg: Invalid recovery target
+
+- name: Restart exactly one existing Kolla service
+  hosts: "{{ recovery_target | default('__invalid_recovery_target__') }}"
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Independently enforce target, authorization and service
+      ansible.builtin.assert:
+        that:
+          - recovery_target is defined
+          - recovery_target is string
+          - recovery_target is match('^[A-Za-z0-9_.-]+$')
+          - recovery_target != 'localhost'
+          - inventory_hostname == recovery_target
+          - inventory_hostname in (groups.get('control', []) + groups.get('compute', []) + groups.get('network', []) + groups.get('storage', []))
+          - recovery_authorized is defined
+          - recovery_authorized is sameas true
+          - recovery_service is defined
+          - recovery_service in ['nova_compute', 'nova_conductor', 'nova_scheduler', 'placement_api', 'nova_api', 'neutron_server', 'neutron_openvswitch_agent', 'neutron_l3_agent', 'neutron_dhcp_agent', 'neutron_metadata_agent', 'cinder_scheduler']
+        fail_msg: Restart not authorized or invalid target/service
+
+    - name: Check exact systemd unit is loaded
+      ansible.builtin.command:
+        argv: [systemctl, show, '--property=LoadState', '--value', 'kolla-{{ recovery_service }}-container.service']
+      register: unit_load
+      changed_when: false
+      no_log: true
+
+    - name: Require loaded unit
+      ansible.builtin.assert:
+        that: unit_load.stdout | trim == 'loaded'
+        fail_msg: Requested unit is not loaded
+
+    - name: Check the selected unit is not transitioning
+      ansible.builtin.command:
+        argv: [systemctl, show, '--property=ActiveState', '--value', 'kolla-{{ recovery_service }}-container.service']
+      register: unit_activity
+      changed_when: false
+      no_log: true
+
+    - name: Require a stable unit state
+      ansible.builtin.assert:
+        that: unit_activity.stdout | trim in ['active', 'inactive', 'failed']
+        fail_msg: Unit is transitioning or unknown; no restart sent
+
+    - name: Inspect the selected systemd unit definition
+      ansible.builtin.command:
+        argv: [systemctl, cat, --no-pager, 'kolla-{{ recovery_service }}-container.service']
+      register: unit_definition
+      changed_when: false
+      no_log: true
+
+    - name: Require the expected Kolla Docker start and stop commands
+      ansible.builtin.assert:
+        that:
+          - unit_definition.stdout_lines | select('match', '^Exec[A-Za-z]+=') | list | length == 2
+          - unit_definition.stdout_lines | select('equalto', 'ExecStart=/usr/bin/docker start -a ' ~ recovery_service) | list | length == 1
+          - unit_definition.stdout_lines | select('match', '^ExecStop=/usr/bin/docker stop ' ~ recovery_service ~ ' -t [0-9]+$') | list | length == 1
+        fail_msg: Unit does not match the expected Docker container; no restart sent
+      no_log: true
+
+    - name: Inspect the loaded systemd commands and dependency properties
+      ansible.builtin.command:
+        argv: &loaded_unit_query
+          - systemctl
+          - show
+          - --all
+          - 'kolla-{{ recovery_service }}-container.service'
+          - '--property=NeedDaemonReload'
+          - '--property=FragmentPath'
+          - '--property=DropInPaths'
+          - '--property=ExecStart'
+          - '--property=ExecStop'
+          - '--property=Requires'
+          - '--property=Requisite'
+          - '--property=Wants'
+          - '--property=BindsTo'
+          - '--property=PartOf'
+          - '--property=ConsistsOf'
+          - '--property=Conflicts'
+          - '--property=PropagatesStopTo'
+          - '--property=PropagatesReloadTo'
+          - '--property=OnFailure'
+          - '--property=OnSuccess'
+          - '--property=Upholds'
+          - '--property=JobTimeoutAction'
+          - '--property=StartLimitAction'
+          - '--property=FailureAction'
+          - '--property=SuccessAction'
+      register: loaded_unit_raw
+      changed_when: false
+      no_log: true
+
+    - name: Parse loaded properties without exposing command contents
+      ansible.builtin.set_fact:
+        loaded_unit: >-
+          {%- set ns = namespace(data={}, valid=true) -%}
+          {%- for line in loaded_unit_raw.stdout_lines -%}
+            {%- set parts = line.split('=', 1) -%}
+            {%- if parts | length != 2 or parts[0] in ns.data -%}{%- set ns.valid = false -%}
+            {%- else -%}{%- set _ = ns.data.update({parts[0]: parts[1]}) -%}{%- endif -%}
+          {%- endfor -%}
+          {{- ns.data if ns.valid else {} -}}
+      no_log: true
+
+    - name: Reject reloaded, altered, or propagating systemd configuration
+      ansible.builtin.assert:
+        that:
+          - loaded_unit.get('NeedDaemonReload', 'missing') == 'no'
+          - loaded_unit.get('FragmentPath', '') == '/etc/systemd/system/kolla-' ~ recovery_service ~ '-container.service'
+          - loaded_unit.get('DropInPaths', 'missing') == ''
+          - loaded_unit.get('ExecStart', '').split(' ;') | length > 1
+          - loaded_unit.get('ExecStop', '').split(' ;') | length > 1
+          - loaded_unit.get('ExecStart', '').split(' ;')[1] == ' argv[]=/usr/bin/docker start -a ' ~ recovery_service
+          - loaded_unit.get('ExecStop', '').split(' ;')[1].startswith(' argv[]=/usr/bin/docker stop ' ~ recovery_service ~ ' -t ')
+          - loaded_unit.get('ExecStop', '').split(' ;')[1].split(' -t ')[-1].isdigit()
+          - loaded_unit.get('ExecStart', '') | regex_findall('path=') | length == 1
+          - loaded_unit.get('ExecStop', '') | regex_findall('path=') | length == 1
+          - loaded_unit.get('Requires', 'missing').split() | difference(['system.slice', 'sysinit.target']) | length == 0
+          - loaded_unit.get('Wants', 'missing').split() | difference(['docker.service']) | length == 0
+          - loaded_unit.get('PartOf', 'missing').split() | difference(['kolla.target']) | length == 0
+          - loaded_unit.get('Conflicts', 'missing').split() | difference(['shutdown.target']) | length == 0
+          - loaded_unit.get('Requisite', 'missing') == ''
+          - loaded_unit.get('BindsTo', 'missing') == ''
+          - loaded_unit.get('ConsistsOf', 'missing') == ''
+          - loaded_unit.get('PropagatesStopTo', 'missing') == ''
+          - loaded_unit.get('PropagatesReloadTo', 'missing') == ''
+          - loaded_unit.get('OnFailure', 'missing') == ''
+          - loaded_unit.get('OnSuccess', 'missing') == ''
+          - loaded_unit.get('Upholds', 'missing') == ''
+          - loaded_unit.get('JobTimeoutAction', 'missing') == 'none'
+          - loaded_unit.get('StartLimitAction', 'missing') == 'none'
+          - loaded_unit.get('FailureAction', 'missing') == 'none'
+          - loaded_unit.get('SuccessAction', 'missing') == 'none'
+        fail_msg: Loaded systemd commands or dependencies are not standard; no restart sent
+      no_log: true
+
+    - name: Require Docker to be active before a unit restart
+      ansible.builtin.command:
+        argv: [systemctl, is-active, --quiet, docker.service]
+      changed_when: false
+      no_log: true
+
+    - name: Check that the host is not shutting down
+      ansible.builtin.command:
+        argv: [systemctl, is-active, --quiet, shutdown.target]
+      register: shutdown_state
+      changed_when: false
+      failed_when: shutdown_state.rc != 3
+      no_log: true
+
+    - name: Snapshot existing container
+      ansible.builtin.command:
+        argv: [docker, inspect, '--format', '{% raw %}[{"Id":{{json .Id}},"State":{"Status":{{json .State.Status}},"Health":{{if .State.Health}}{"Status":{{json .State.Health.Status}}}{{else}}null{{end}}}}]{% endraw %}', '{{ recovery_service }}']
+      register: docker_before
+      changed_when: false
+      no_log: true
+
+    - name: Record container identity and require stable state
+      ansible.builtin.set_fact:
+        initial_container: '{{ (docker_before.stdout | from_json)[0] }}'
+      no_log: true
+
+    - name: Reject transitional or malformed container
+      ansible.builtin.assert:
+        that:
+          - initial_container.Id is defined
+          - initial_container.Id | length > 0
+          - initial_container.State.Status in ['running', 'exited']
+          - ((initial_container.State.Health | default({}, true)).Status | default('none')) != 'starting'
+        fail_msg: Container is missing or in a transitional state
+      no_log: true
+
+    - name: Re-read unit immediately before the restart
+      ansible.builtin.command:
+        argv: [systemctl, cat, --no-pager, 'kolla-{{ recovery_service }}-container.service']
+      register: unit_before_restart
+      changed_when: false
+      no_log: true
+
+    - name: Re-read loaded systemd properties before restart
+      ansible.builtin.command:
+        argv: *loaded_unit_query
+      register: loaded_unit_before_restart
+      changed_when: false
+      no_log: true
+
+    - name: Re-read unit activity before restart
+      ansible.builtin.command:
+        argv: [systemctl, show, '--property=ActiveState', '--value', 'kolla-{{ recovery_service }}-container.service']
+      register: unit_activity_before_restart
+      changed_when: false
+      no_log: true
+
+    - name: Re-read container immediately before the restart
+      ansible.builtin.command:
+        argv: [docker, inspect, '--format', '{% raw %}[{"Id":{{json .Id}},"State":{"Status":{{json .State.Status}},"Health":{{if .State.Health}}{"Status":{{json .State.Health.Status}}}{{else}}null{{end}}}}]{% endraw %}', '{{ recovery_service }}']
+      register: container_before_restart
+      changed_when: false
+      no_log: true
+
+    - name: Refuse if the unit or container identity or state changed
+      ansible.builtin.assert:
+        that:
+          - unit_before_restart.stdout == unit_definition.stdout
+          - loaded_unit_before_restart.stdout == loaded_unit_raw.stdout
+          - unit_activity_before_restart.stdout | trim == unit_activity.stdout | trim
+          - (container_before_restart.stdout | from_json)[0].Id == initial_container.Id
+          - (container_before_restart.stdout | from_json)[0].State.Status == initial_container.State.Status
+          - (((container_before_restart.stdout | from_json)[0].State.Health | default({}, true)).Status | default('none')) in ['healthy', 'unhealthy', 'none']
+        fail_msg: The unit or container changed, or is starting; no restart sent
+      no_log: true
+
+    - name: Restart the existing unit once
+      ansible.builtin.command:
+        argv: [systemctl, restart, 'kolla-{{ recovery_service }}-container.service']
+      no_log: true
+
+    - name: Verify systemd unit is active
+      ansible.builtin.command:
+        argv: [systemctl, is-active, '--quiet', 'kolla-{{ recovery_service }}-container.service']
+      changed_when: false
+      no_log: true
+
+    - name: Inspect container immediately after restart
+      ansible.builtin.command:
+        argv: [docker, inspect, '--format', '{% raw %}[{"Id":{{json .Id}},"State":{"Status":{{json .State.Status}},"Health":{{if .State.Health}}{"Status":{{json .State.Health.Status}}}{{else}}null{{end}}}}]{% endraw %}', '{{ recovery_service }}']
+      register: docker_after
+      changed_when: false
+      no_log: true
+
+    - name: Require original container to be running
+      ansible.builtin.assert:
+        that:
+          - (docker_after.stdout | from_json)[0].Id == initial_container.Id
+          - (docker_after.stdout | from_json)[0].State.Status == 'running'
+        fail_msg: Container identity or running state changed unexpectedly
+      no_log: true
+
+    - name: Poll health if a healthcheck exists
+      ansible.builtin.command:
+        argv: [docker, inspect, '--format', '{% raw %}[{"Id":{{json .Id}},"State":{"Status":{{json .State.Status}},"Health":{{if .State.Health}}{"Status":{{json .State.Health.Status}}}{{else}}null{{end}}}}]{% endraw %}', '{{ recovery_service }}']
+      register: docker_health
+      changed_when: false
+      until: >-
+        docker_health.rc == 0 and
+        ((docker_health.stdout | from_json)[0].Id == initial_container.Id) and
+        ((docker_health.stdout | from_json)[0].State.Status == 'running') and
+        ((docker_health.stdout | from_json)[0].State.Health.Status == 'healthy')
+      retries: '{{ recovery_health_retries | default(24) | int }}'
+      delay: '{{ recovery_health_delay | default(5) | int }}'
+      when: (docker_after.stdout | from_json)[0].State.Health | default(none, true) != none
+      no_log: true
+
+    - name: Report health status
+      ansible.builtin.debug:
+        msg: "Container health: {{ 'UNKNOWN (no healthcheck)' if ((docker_after.stdout | from_json)[0].State.Health | default(none, true)) == none else 'healthy' }}"
+
+    - name: Require manual verification when no container healthcheck exists
+      ansible.builtin.fail:
+        msg: 'Restart was sent, but health is UNKNOWN because no container healthcheck is configured. Verify the application and workload before proceeding; do not repeat the restart.'
+      when: (docker_after.stdout | from_json)[0].State.Health | default(none, true) == none

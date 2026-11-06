@@ -741,7 +741,7 @@ Completion: Grafana and Prometheus are reachable through the intended management
 
 ## Operations — Shutdown, power-on and recovery
 
-For the recurring operator procedure after installation, see [Shutdown, power-on and recovery](SHUTDOWN-AND-RECOVERY.md). It explains safe boundaries, the automated health checks, and what to do when the database or an API is unavailable. This is separate from the numbered installation steps.
+For the recurring operator procedure after installation, see [Shutdown, power-on and recovery](SHUTDOWN-AND-RECOVERY.md). It includes a read-only, table-form service overview, the full health checks, and a confirmed single-service manual restart option, plus guidance when the database or an API is unavailable. These operational procedures are separate from the numbered installation steps.
 
 ## Final completion checklist
 

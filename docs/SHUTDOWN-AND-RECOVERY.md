@@ -13,7 +13,7 @@ export OS_CLOUD=kolla-admin
 
 The generated Kolla cloud is normally named `kolla-admin`; choose your configured cloud name instead if it differs. For commands under `scripts/`, first change into your local clone of this repository. Do not paste secrets from `clouds.yaml` or `/etc/kolla/passwords.yml` into the terminal or chat.
 
-**Scope:** the health checks are read-only. They do not stop or restart services, create or delete VMs, or repair the database. This repository does not yet provide a verified automatic, dependency-ordered shutdown or out-of-band power-on. Do not copy another lab's helper scripts or fixed host order without verifying that its inventory, container engine, service units, and storage match yours.
+**Scope:** the health checks and the default `lab-recover.sh` view are read-only. They do not stop or restart services, create or delete VMs, or repair the database. Its separate `--restart` action is an explicit, confirmed change to one selected service on one selected node; see [manual service restart](#6-manual-service-restart). This repository does not yet provide a verified automatic, dependency-ordered shutdown or out-of-band power-on. Do not copy another lab's helper scripts or fixed host order without verifying that its inventory, container engine, service units, and storage match yours.
 
 ## 1. Before shutting down
 
@@ -62,7 +62,18 @@ Enter your sudo password if prompted. Review the cancellation result on every ho
 
 Power on all physical nodes through their power buttons or your separately configured out-of-band system. Allow them time to boot. A preferred database startup order is not a substitute for Galera recovery, and no order is assumed here without verified shutdown records. Leave the management VM on.
 
-From the **repository root on the management VM**, activate the Kolla environment and run the combined check:
+For a compact, table-form overview first, run the following from the repository root on the management VM:
+
+```bash
+source "$HOME/.venvs/kolla-2026.2/bin/activate"
+bash scripts/lab-recover.sh
+```
+
+This is read-only and does not ask for sudo. It shows each selected node's Kolla systemd unit state, reported Compute service and Network agent heartbeats, and VM statuses. An `ACTIVE` systemd unit does **not** prove its container, API, or cluster is healthy. `ABSENT` means the unit was not found on that node; verify whether it is expected there. `MISSING` means a core unit is absent on a host in its corresponding inventory group. Compute heartbeat coverage is compared with `compute` inventory aliases; if service hostnames differ from aliases, investigate the resulting `BLOCKED` status. Other service and agent rows are API-reported only, and missing expected rows are not fully detected. VM status does not prove guest connectivity or storage health. A VM in `ERROR`, a failed or unreachable check, a stopped or expected-but-missing unit, or an unavailable API makes the command return nonzero; `(none returned)` means the API successfully returned an empty VM list, not proof of workload quiescence.
+
+For both the table and the more detailed check below, use `bash scripts/lab-recover.sh --full`. This runs the table first and then invokes the existing full audit, including a local sudo prompt. The checks are independent: the full audit still runs if the table identifies an issue. Neither mode restarts anything.
+
+Alternatively, from the **repository root on the management VM**, activate the Kolla environment and run the original combined check directly:
 
 ```bash
 source "$HOME/.venvs/kolla-2026.2/bin/activate"
@@ -172,6 +183,49 @@ Compare the running members with the configured `rabbitmq` inventory group and c
   These logs may include private information or service credentials. Redact them before sharing. If the container is stopped or restarting, `docker exec` may fail; inspect that container's state and find the persistent Kolla log volume instead of inferring the cause. Restart only a reviewed affected service after checking its dependencies; do not restart the entire cloud blindly.
 - **A compute or network service reports down:** check its heartbeat, admin state, container and dependencies separately. A disabled service may be intentionally in maintenance; do not automatically enable it.
 - **A VM remains in BUILD or ERROR:** inspect the existing VM and its redacted error first. Do not issue a duplicate create command or delete it without reviewing its contents.
+
+## 6. Manual service restart
+
+A restart is an **intentional service interruption**, not a health check. First identify the exact affected node and service, inspect its recent errors, and check its dependencies, workloads, and remaining replicas. Restarting a compute service or network agent can affect workloads or networking; do not assume another replica can carry the load. A running process or HTTP error alone does not identify the cause. Do not repeatedly restart a service when the cause or outcome is unclear.
+
+### From the management VM
+
+From the repository root with the Kolla environment active, choose **one** inventory alias shown in the table and **one** approved service name from the reference below. This example selects `nova_compute`; replace `NODE_ALIAS` with the actual affected inventory alias:
+
+```bash
+bash scripts/lab-recover.sh --restart --node NODE_ALIAS --service nova_compute
+```
+
+The tool shows the selected node, literal inventory IP, and service and requires the exact confirmation phrase displayed, then prompts for the node sudo password locally. It requires an SSH target with a literal inventory IP and refuses local, loopback, or management-interface addresses; if your inventory uses only a DNS name, configure and review its literal `ansible_host` first. The tool rechecks the inventory after confirmation and pins the chosen address, but it cannot eliminate all concurrent-change races. Do not put the password in chat or in the command. If confirmation is declined, no restart is sent. The playbook validates the one-node target and allowlist, checks the unit and existing container, requests one restart of the selected unit, and checks its resulting state. Systemd dependencies can affect other units. It does **not** establish healthy dependencies, sufficient capacity, application-level health, or quorum on your behalf; those require separate review. A stopped existing unit may be started by `restart`. If a check fails or the outcome is unclear, stop and inspect the result; do not blindly repeat the action. The confirmation is an operator safeguard, not an access-control boundary; an administrator can still invoke systemd directly.
+
+The tool deliberately excludes MariaDB and RabbitMQ from its generic restart action. Do not use individual systemd restarts as a substitute for Galera or RabbitMQ cluster recovery. Follow the database section above or a broker-specific procedure.
+
+### Direct quick reference: on the affected node only
+
+These are alternatives to the management-VM tool, **not** commands to run together. Select only the one service whose restart you have reviewed. The unit names apply to Kolla deployments that actually have these systemd units; verify the selected unit and container on the affected node first. A service that is not deployed, such as an optional Cinder scheduler, cannot be restarted this way. `systemctl restart` also starts a stopped unit; do not run a separate stop first. A successful command is normally silent.
+
+| Component | Command on the affected node |
+|---|---|
+| Nova compute | `sudo systemctl restart kolla-nova_compute-container.service` |
+| Nova conductor | `sudo systemctl restart kolla-nova_conductor-container.service` |
+| Nova scheduler | `sudo systemctl restart kolla-nova_scheduler-container.service` |
+| Nova API | `sudo systemctl restart kolla-nova_api-container.service` |
+| Placement API | `sudo systemctl restart kolla-placement_api-container.service` |
+| Neutron server API | `sudo systemctl restart kolla-neutron_server-container.service` |
+| Neutron Open vSwitch agent | `sudo systemctl restart kolla-neutron_openvswitch_agent-container.service` |
+| Neutron router / L3 agent | `sudo systemctl restart kolla-neutron_l3_agent-container.service` |
+| Neutron DHCP agent | `sudo systemctl restart kolla-neutron_dhcp_agent-container.service` |
+| Neutron metadata agent | `sudo systemctl restart kolla-neutron_metadata_agent-container.service` |
+| Cinder scheduler | `sudo systemctl restart kolla-cinder_scheduler-container.service` |
+
+For example, after selecting Nova compute, verify the **same affected node and service**:
+
+```bash
+systemctl status kolla-nova_compute-container.service --no-pager
+sudo docker inspect --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}not-configured{{end}}' nova_compute
+```
+
+A running unit or container without a configured healthcheck is **not** a health pass. In that case, the management-VM action reports `UNKNOWN` and exits nonzero **after the restart was sent**; verify the application and workload rather than repeating the restart. Where health is configured, wait for `healthy` and separately verify the relevant API or OpenStack service heartbeat and the affected workload. If it fails or remains `starting`, stop and review the service's sanitized logs. The tool accepts standard Kolla Docker systemd units; a unit that changes between checks, a drop-in, unsupported dependency, unloaded systemd change, or other nonstandard configuration blocks the action. This local quick reference assumes Docker; check your configured container engine and unit implementation before applying it to another deployment.
 
 ## References
 
