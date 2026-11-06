@@ -1,7 +1,7 @@
 ---
 # Run on the deployment host (sudo password is prompted locally):
 # ansible-playbook -i /etc/kolla/multinode ansible/playbooks/lab-foundation-health.yml -K
-# This is an optional, read-only local-service audit, not a quorum test.
+# This is an optional, read-only local-service and sampled Galera status audit.
 - name: Inspect foundation services on their inventory members
   hosts: mariadb:rabbitmq
   gather_facts: false
@@ -37,6 +37,33 @@
       register: foundation_mariadb_check
       changed_when: false
       failed_when: false
+      no_log: true
+
+    - name: Read WSREP status with available healthcheck configurations
+      ansible.builtin.command:
+        argv: [docker, exec, mariadb, mariadb, '--defaults-file={{ item.item }}', --batch, --skip-column-names, -e, "SHOW GLOBAL STATUS WHERE Variable_name IN ('wsrep_cluster_status','wsrep_local_state_comment','wsrep_ready','wsrep_connected','wsrep_cluster_size','wsrep_cluster_state_uuid')"]
+      loop: "{{ foundation_configs.results | default([]) }}"
+      when: item.rc | default(1) == 0
+      register: foundation_wsrep_queries
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Parse successful WSREP response
+      ansible.builtin.set_fact:
+        foundation_wsrep: >-
+          {%- set queries = foundation_wsrep_queries.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | list -%}
+          {%- set ns = namespace(data={}, valid=true) -%}
+          {%- if queries | length -%}
+            {%- for line in queries[0].stdout_lines | default([]) -%}
+              {%- set parts = line.split('\t') -%}
+              {%- if parts | length != 2 or parts[0] in ns.data or not parts[1] -%}{%- set ns.valid = false -%}
+              {%- else -%}{%- set _ = ns.data.update({parts[0]: parts[1]}) -%}{%- endif -%}
+            {%- endfor -%}
+          {%- else -%}{%- set ns.valid = false -%}{%- endif -%}
+          {%- set required = ['wsrep_cluster_status','wsrep_local_state_comment','wsrep_ready','wsrep_connected','wsrep_cluster_size','wsrep_cluster_state_uuid'] -%}
+          {{- ns.data if ns.valid and ns.data | length == 6 and required | difference(ns.data.keys() | list) | length == 0 and ns.data.wsrep_cluster_size is match('^[0-9]+$') and ns.data.wsrep_cluster_state_uuid is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') and ns.data.wsrep_cluster_state_uuid != '00000000-0000-0000-0000-000000000000' else {} -}}
+      when: "'mariadb' in foundation_services"
       no_log: true
 
     - name: Run RabbitMQ local application diagnostic
@@ -83,15 +110,44 @@
       when: item.1 in groups.get(item.0, [])
       register: foundation_report
 
+    - name: Report sanitized Galera member state
+      ansible.builtin.debug:
+        msg: >-
+          Galera member: {% set w = hostvars[item].foundation_wsrep | default({}) %}{% if w | length != 6 %}BLOCKED{% elif w.wsrep_cluster_status == 'Primary' and w.wsrep_local_state_comment == 'Synced' and w.wsrep_ready == 'ON' and w.wsrep_connected == 'ON' and w.wsrep_cluster_size | int == groups.get('mariadb', []) | length %}PASS{% else %}FAIL{% endif %}
+      loop: "{{ groups.get('mariadb', []) }}"
+
+    - name: Calculate sampled Galera status without exposing identifiers
+      ansible.builtin.set_fact:
+        foundation_galera_status: >-
+          {% set ns = namespace(blocked=false, unhealthy=false, uuids=[]) %}
+          {% set members = groups.get('mariadb', []) %}
+          {% set shards = groups.keys() | select('match', '^mariadb[_-]shard') | list %}
+          {% if members | length == 0 or shards | length > 1 %}{% set ns.blocked = true %}{% endif %}
+          {% for host in members %}
+            {% set w = hostvars[host].foundation_wsrep | default({}) %}
+            {% if w | length != 6 %}{% set ns.blocked = true %}
+            {% else %}
+              {% set ns.uuids = ns.uuids + [w.wsrep_cluster_state_uuid] %}
+              {% if w.wsrep_cluster_status != 'Primary' or w.wsrep_local_state_comment != 'Synced' or w.wsrep_ready != 'ON' or w.wsrep_connected != 'ON' or w.wsrep_cluster_size | int != members | length %}{% set ns.unhealthy = true %}{% endif %}
+            {% endif %}
+          {% endfor %}
+          {% if ns.blocked %}BLOCKED{% elif ns.unhealthy or ns.uuids | unique | list | length != 1 %}FAIL{% else %}PASS{% endif %}
+      no_log: true
+
+    - name: Report Galera cluster
+      ansible.builtin.debug:
+        msg: "Galera cluster: {{ foundation_galera_status | trim }}"
+
     - name: State audit scope
       ansible.builtin.debug:
-        msg: 'Galera primary/synced/cluster size and RabbitMQ cluster membership/quorum: NOT CHECKED. Local PASS does not establish cluster quorum.'
+        msg: 'RabbitMQ cluster membership/quorum: NOT CHECKED. Galera counts and UUIDs are sampled sequentially and do not prove exact member identities or an atomic cluster view.'
 
     - name: Fail closed when any expected member is missing or not PASS
       ansible.builtin.assert:
         that:
           - groups.get('mariadb', []) | length > 0
           - groups.get('rabbitmq', []) | length > 0
+          - foundation_galera_status | trim == 'PASS'
           - foundation_report.results | rejectattr('skipped', 'defined') | selectattr('msg.status', 'match', '^\\s*PASS\\b') | list | length == (groups.get('mariadb', []) | length + groups.get('rabbitmq', []) | length)
         fail_msg: 'FAIL or BLOCKED: audit incomplete or a service is not ready; see sanitized results above.'
-        success_msg: 'PASS: all expected members passed local checks only; cluster quorum not checked.'
+        success_msg: 'PASS: expected hosts passed local checks and report consistent Galera state; exact member identities and RabbitMQ quorum not checked.'

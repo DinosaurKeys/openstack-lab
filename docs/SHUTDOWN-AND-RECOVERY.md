@@ -69,7 +69,7 @@ source "$HOME/.venvs/kolla-2026.2/bin/activate"
 bash scripts/lab-health-full.sh
 ```
 
-Enter the node sudo password at the local terminal prompt for the container checks. The tool does not store or print that password. The first part checks the current inventory, SSH, host resources, management-address service ports, cloud authentication, and available service/agent lists. The second part uses sudo to inspect the MariaDB and RabbitMQ containers and run **local** application diagnostics on their inventory members. It never restarts services, and it does not display tokens, passwords, raw Docker inspection data, or application logs.
+Enter the node sudo password at the local terminal prompt for the container checks. The tool does not store or print that password. The first part checks the current inventory, SSH, host resources, management-address service ports, cloud authentication, and available service/agent lists. The second part uses sudo to inspect the MariaDB and RabbitMQ containers, run local application diagnostics, and compare reported Galera state across the expected members of a single inventory shard. It never restarts services, and it does not display tokens, passwords, raw Docker inspection data, cluster UUIDs, or application logs.
 
 For the host/cloud portion only, without sudo, run `python3 scripts/lab-health.py`. For a different inventory or named cloud, use `bash scripts/lab-health-full.sh --inventory PATH --cloud NAME`. A nonzero exit means at least one result needs attention or could not be checked; it is not itself a diagnosis.
 
@@ -82,7 +82,13 @@ By default, the host dashboard checks the `control`, `compute`, and `network` in
 | `BLOCKED` | The check could not establish a result. This is not proof that the service is down. |
 | `REVIEW` | The reported state needs an operator decision, for example a disabled scheduling service. |
 
-The dashboard is not a workload test and cannot by itself prove Galera quorum, RabbitMQ membership, successful guest boot, storage integrity, or that the lab is ready to power off. The service heartbeat summaries cover rows returned by the API; they do not verify that every expected host has registered a service. A service can be running while its cluster or OpenStack heartbeat is unhealthy. Do not repeatedly restart components merely because a single check is blocked.
+The Galera aggregate check is designed for a **single shard** represented by the `mariadb` inventory group. It requires each expected member to report `Primary`, `Synced`, connected and ready, the expected member count, and the same nonzero cluster UUID. A missing status, unavailable healthcheck credentials, unrecognized result, or detected multiple-shard layout is `BLOCKED`. Not every custom multi-shard layout can be detected automatically; if you use multiple shards, do not rely on this aggregate and verify each shard separately.
+
+The dashboard is not a workload test and cannot by itself prove exact Galera member identities, a single atomic cluster view, RabbitMQ membership, successful guest boot, storage integrity, or that the lab is ready to power off. It samples members sequentially and compares the reported counts and UUIDs; an unexpected member could replace an expected one without changing the count. A Galera PASS does not prove backup or storage integrity. The service heartbeat summaries cover rows returned by the API; they do not verify that every expected host has registered a service. A service can be running while its cluster or OpenStack heartbeat is unhealthy. Do not repeatedly restart components merely because a single check is blocked.
+
+**A recurring cold-start pattern:** hosts and RabbitMQ can be up while MariaDB containers remain `starting` and the cloud API is blocked. One possible cause is a Galera cluster with all members in `NON_PRIM`. Follow the database decision table below to establish whether that is actually the current state. A reboot does not automatically require recovery, and an unconditional recovery at every boot could disrupt a healthy or partially available cluster.
+
+Galera needs a Primary Component, not just running containers. After a complete shutdown, ordinary simultaneous container starts do not always re-establish one. MariaDB documents that `gvwstate.dat` is deleted on graceful shutdown, so its absence alone is not evidence of corruption. When `pc.recovery` is enabled and a suitable saved view exists, a cluster may recover automatically after a full crash once the saved members reconnect; that mechanism is not guaranteed for every shutdown. See the [MariaDB Primary Component recovery documentation](https://mariadb.com/docs/galera-cluster/high-availability/recovering-a-primary-component).
 
 ## 4. If the database is unavailable
 
@@ -94,27 +100,55 @@ ansible -i /etc/kolla/multinode mariadb -b -K \
   -m ansible.builtin.command -a 'docker ps -a --filter name=mariadb'
 ```
 
-Enter your sudo password locally. Look for the exact `mariadb` container and its status on **every** configured member; the filter may also show temporary recovery containers. An Ansible `CHANGED` label here is the command module's default—it is a read-only listing. If any member is unreachable, its result is missing, a MariaDB container is running, or the stop state is abnormal or unclear, stop and investigate; do not infer a complete stopped cluster from a failed port. Inspect redacted logs and the underlying storage/backup state before deciding on recovery.
+Enter your sudo password locally. Look for the exact `mariadb` container and its status on **every** configured member; the filter may also show temporary recovery containers. An Ansible `CHANGED` label here is the command module's default—it is a read-only listing. Container state alone does not establish whether Galera has a Primary component: containers can be running while the database cluster is non-primary.
 
-For this fallback, proceed only when all intended members are reachable and their `mariadb` containers are confirmed stopped with clean exit status, with no surviving Primary. A surviving Primary member, an unreachable node, a split cluster, unclean exit, or unclear data state needs separate review. Do not manually select a bootstrap node, edit `grastate.dat`, delete a database volume, or start all MariaDB containers independently.
+If containers are running but the database is not ready, inspect the actual MariaDB application log on each member (the wrapper output from `docker logs` can omit it). If SQL is responding, also run the read-only [Galera status check](#verify-galera-and-rabbitmq); a failed SQL query means **unknown**, not automatically “no Primary.”
 
-Only after confirming a **complete MariaDB cluster outage** and reviewing backups and the Kolla recovery impact, run the installed Kolla recovery once from the management VM:
+```bash
+ansible -i /etc/kolla/multinode mariadb -b -K -m ansible.builtin.command \
+  -a 'docker exec mariadb tail -n 40 /var/log/kolla/mariadb/mariadb.log'
+```
+
+Enter sudo at the local prompt. Check the newest timestamps, not old entries. These logs may contain private information; redact them before sharing. If a container is restarting and `docker exec` fails, its state is **unknown**, not proof of a complete outage. `gvwstate.dat` missing alone does not prove the database is corrupt; do not create or edit it by hand.
+
+| Observed state | Decision |
+|---|---|
+| A Primary component survives, or its presence is uncertain | Do not run complete-cluster recovery; inspect that member and the rest of the cluster first. |
+| Every configured member is reachable and the database containers are cleanly stopped after a full shutdown, with no surviving Primary | Review backups and proceed with coordinated Kolla recovery if the complete outage is confirmed. |
+| Containers are **running**, but all members show a recent, consistent `NON_PRIM` view with no surviving Primary | This can also be a complete cluster outage. Verify the view covers every configured member, review backups, and use coordinated Kolla recovery; Kolla will stop the containers itself. |
+| Any member is unreachable, logs are stale/incomplete, the views disagree, there are additional unexamined shards, or data state is unclear | Stop for investigation; a failed port or `starting` healthcheck is not enough evidence to recover. |
+
+Do not manually select a bootstrap node, edit `grastate.dat`, delete a database volume, or restart all MariaDB containers independently. Full-cluster loss after a power cycle may require Kolla recovery; it is **not** an instruction to recover on every reboot or proof that hardware is defective.
+
+Only after confirming a **complete MariaDB cluster outage** and reviewing backups and the Kolla recovery impact should you consider recovery. Immediately before running it, recheck that all intended members are still reachable and inspect their current container states:
+
+```bash
+ansible -i /etc/kolla/multinode mariadb -e '{"ansible_become": false}' -m ansible.builtin.ping
+ansible -i /etc/kolla/multinode mariadb -b -K \
+  -m ansible.builtin.command -a 'docker ps -a --filter name=mariadb'
+```
+
+If any MariaDB container is running, repeat the current SQL and log checks above for every member, and verify no Primary or independently writable partition survives. Recent logs are evidence, not an atomic proof: a member can change state between checks and recovery. Keep other operators and workloads from changing the cluster during review; if a host is missing, a Primary may exist, a result is stale, or the state is uncertain, **do not run recovery**. A privileged, coordinated assessment or backup review is then needed.
+
+Once those checks and the outage decision are complete, run the installed Kolla recovery once from the management VM:
 
 ```bash
 ANSIBLE_BECOME_ASK_PASS=true ANSIBLE_DISPLAY_SKIPPED_HOSTS=false \
   kolla-ansible mariadb-recovery -i /etc/kolla/multinode
 ```
 
-This is a **change**, not a check: Kolla stops MariaDB containers, runs WSREP recovery, selects a recovered sequence position, modifies bootstrap state and configuration, and coordinates cluster startup. Enter your sudo password at the local prompt. Stop if it reports a failure; do not repeatedly run recovery without diagnosing it. Do not share passwords, tokens, configuration files, or unredacted logs.
+This is a **change**, not a check: Kolla stops MariaDB containers, runs WSREP recovery, normally compares recovered positions and chooses a member to bootstrap, modifies bootstrap state and configuration, and coordinates cluster startup. A preselected recovery-host override bypasses the normal selection; do not set one without a separate, verified recovery plan. Enter your sudo password at the local prompt. Stop if it reports a failure; do not repeatedly run recovery without diagnosing it. Do not share passwords, tokens, configuration files, or unredacted logs.
+
+### Verify Galera and RabbitMQ
 
 After a successful recap with no failures or unreachable hosts, run the combined health dashboard again. Then verify actual Galera status on **every** database member. This example uses the Kolla healthcheck client configuration for an Ubuntu/Debian MariaDB image; it does not display that configuration:
 
 ```bash
 ansible -i /etc/kolla/multinode mariadb -b -K -m ansible.builtin.command \
-  -a "docker exec mariadb mariadb --defaults-file=/etc/mysql/healthcheck.cnf --batch --skip-column-names -e \"SHOW GLOBAL STATUS WHERE Variable_name IN ('wsrep_cluster_status','wsrep_cluster_size','wsrep_local_state_comment','wsrep_ready','wsrep_connected','wsrep_cluster_state_uuid')\""
+  -a "docker exec mariadb mariadb --defaults-file=/etc/mysql/healthcheck.cnf --batch --skip-column-names -e \"SHOW GLOBAL STATUS WHERE Variable_name IN ('wsrep_cluster_status','wsrep_cluster_size','wsrep_local_state_comment','wsrep_ready','wsrep_connected','wsrep_cluster_state_uuid','wsrep_incoming_addresses')\""
 ```
 
-Each member should report `Primary`, `Synced`, `wsrep_ready=ON`, `wsrep_connected=ON`, the same cluster UUID, and a cluster size equal to the number of configured MariaDB members. If the command is unavailable, permission is denied, a member is missing, or any result differs, status is **unknown or unhealthy**: stop and review, not automatic success. The local healthcheck alone does not prove the expected membership.
+Each member of the **same Galera shard** should report `Primary`, `Synced`, `wsrep_ready=ON`, `wsrep_connected=ON`, the same cluster UUID, and a cluster size equal to that shard's configured MariaDB member count. For a single-shard deployment, that is the number of MariaDB members. Where `wsrep_incoming_addresses` reports identifiable addresses, compare them with the expected members; if those addresses cannot be reliably mapped, exact identities remain unknown. These are sequential samples, not an atomic view. Keep node addresses and cluster identifiers private when sharing results. If you use multiple shards, check each shard and its inventory membership separately rather than expecting one UUID across all shards. If the command is unavailable, permission is denied, a member is missing, or any result differs, status is **unknown or unhealthy**: stop and review, not automatic success. The local healthcheck alone does not prove the expected membership.
 
 Check RabbitMQ's reported running members, alarms and partitions too:
 
@@ -128,7 +162,14 @@ Compare the running members with the configured `rabbitmq` inventory group and c
 ## 5. Diagnose other failures
 
 - **RabbitMQ:** a listening port does not prove all members joined, that there are no alarms, or that clients authenticate. Inspect the cluster and only then consider a targeted repair.
-- **An API returns 502:** inspect its proxy/backend and required dependencies, especially the database; 502 alone does not identify the failed component.
+- **An API returns 502 or 503:** a proxy may be unable to use its backend, but the HTTP status alone does not identify why. Check the database, RabbitMQ, and the affected API's local health first. If those dependencies are healthy, inspect the affected API's logs on its inventory members; do not keep repeating MariaDB recovery. For example, to inspect Neutron server logs on the nodes in `neutron-server`:
+
+  ```bash
+  ansible -i /etc/kolla/multinode neutron-server -b -K -m ansible.builtin.command \
+    -a 'docker exec neutron_server tail -n 40 /var/log/kolla/neutron/neutron-server.log'
+  ```
+
+  These logs may include private information or service credentials. Redact them before sharing. If the container is stopped or restarting, `docker exec` may fail; inspect that container's state and find the persistent Kolla log volume instead of inferring the cause. Restart only a reviewed affected service after checking its dependencies; do not restart the entire cloud blindly.
 - **A compute or network service reports down:** check its heartbeat, admin state, container and dependencies separately. A disabled service may be intentionally in maintenance; do not automatically enable it.
 - **A VM remains in BUILD or ERROR:** inspect the existing VM and its redacted error first. Do not issue a duplicate create command or delete it without reviewing its contents.
 

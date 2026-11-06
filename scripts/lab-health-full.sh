@@ -29,6 +29,6 @@ ANSIBLE_DISPLAY_SKIPPED_HOSTS=false ansible-playbook -i "$inventory" \
 audit_rc=$?
 printf '\n=== Summary ===\n'
 [ "$health_rc" -eq 0 ] && printf 'Host/API checks: PASS\n' || printf 'Host/API checks: review FAIL/BLOCKED/REVIEW above\n'
-[ "$audit_rc" -eq 0 ] && printf 'Foundation local checks: PASS\n' || printf 'Foundation local checks: incomplete or failed; review above\n'
-printf 'Neither check verifies full Galera or RabbitMQ cluster membership.\n'
+[ "$audit_rc" -eq 0 ] && printf 'Foundation checks: PASS\n' || printf 'Foundation checks: incomplete or failed; review above\n'
+printf 'Galera status is sampled: exact member identities and RabbitMQ quorum are not checked.\n'
 if [ "$health_rc" -ne 0 ] || [ "$audit_rc" -ne 0 ]; then exit 1; fi
