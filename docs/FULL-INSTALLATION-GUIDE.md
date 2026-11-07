@@ -485,10 +485,12 @@ Type `true` literally: it means “ask for a password,” not the password itsel
 
 ### 8.3 — Bootstrap, then check
 
-First run bootstrap by itself:
+**Firewall reference:** The Kolla baremetal role can disable UFW and set its default policy to allow when `disable_firewall` is true. Setting `-e disable_firewall=false` on the bootstrap command skips that firewall-management task; it does **not** enable UFW, open ports, or establish that the current firewall rules permit OpenStack traffic. Before enabling a host firewall, inventory the deployed services, required ports, traffic directions, and trusted source networks for the selected Kolla release. Test access and recovery through a console and apply a reviewed least-privilege ruleset; do not enable a default-deny policy on the nodes before the required paths are confirmed. Verify the live UFW state and rules separately on each node. The extra variable is scoped to that command unless configured elsewhere.
+
+To preserve the existing firewall settings during bootstrap, run bootstrap by itself:
 
 ```bash
-kolla-ansible bootstrap-servers -i /etc/kolla/multinode
+kolla-ansible bootstrap-servers -i /etc/kolla/multinode -e disable_firewall=false
 ```
 
 At the password prompt, enter the same become password you tested. Wait for the command to finish. It may install packages and change host configuration; it is not a read-only check. If the recap shows any failed or unreachable hosts, stop, examine the error, and do not proceed to prechecks.
