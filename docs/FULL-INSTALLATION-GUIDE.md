@@ -509,13 +509,24 @@ Enter the password again if prompted. Stop if prechecks fail; correct the underl
 
 ## Step 9 — Deploy OpenStack
 
+Run this step on the management VM with the Kolla virtual environment active. In **this same terminal**, explicitly enable the sudo prompt and suppress skipped-task output:
+
+```bash
+export ANSIBLE_BECOME_ASK_PASS=true
+export ANSIBLE_DISPLAY_SKIPPED_HOSTS=false
+```
+
+The value `true` is a literal option, **not** your sudo password. The settings from a launcher or a different terminal do not carry into this shell. Kolla should ask for the password at `BECOME password:`; if it does not, stop and verify the prompt setting before continuing.
+
+**Credential safety:** Skipped-task suppression reduces output; it does **not** guarantee that passwords, tokens, or other secrets are hidden in successful or failed tasks, warnings, logs, or other output. Do not paste deployment output, configuration, or credentials into chat or Git. If a credential has been exposed, treat it as compromised and plan its coordinated rotation; do not blindly regenerate passwords in an existing deployment.
+
 Deploy the configured Kolla-Ansible release to all three nodes:
 
 ```bash
 kolla-ansible deploy -i /etc/kolla/multinode
 ```
 
-This is the step that installs and configures the OpenStack services. It can take a long time while container images are downloaded and services are initialized. Keep the management VM powered on and connected for the duration. If the playbook fails, preserve its output and use the Kolla troubleshooting guide; do not rerun destructive disk commands or switch releases to hide an error.
+This is the step that installs and configures the OpenStack services. It can take a long time while container images are downloaded and services are initialized. Keep the management VM powered on and connected for the duration. If the playbook fails, stop and investigate the failed task locally without sharing raw output; do not rerun destructive disk commands or switch releases to hide an error.
 
 After the first deployment, validate the generated service configuration:
 
@@ -730,12 +741,19 @@ enable_prometheus: true
 enable_grafana: true
 ```
 
-Then apply the configuration through Kolla-Ansible:
+Then apply the configuration through Kolla-Ansible. Activate the Kolla virtual environment and enable the sudo prompt in this terminal as described in Step 8. For the guide's default test-image registry, explicitly acknowledge test images for prechecks:
 
 ```bash
-kolla-ansible prechecks -i /etc/kolla/multinode
+kolla-ansible prechecks -i /etc/kolla/multinode --use-test-images
+```
+
+Stop if prechecks fail. For a different, approved registry, review whether that option is appropriate. Only after prechecks succeed, run:
+
+```bash
 kolla-ansible deploy -i /etc/kolla/multinode
 ```
+
+Kolla output can contain secrets, including in failed tasks; do not paste raw output into chat or Git. Follow the credential-safety guidance in Step 9.
 
 Keep the dashboards and endpoints on the management network unless a separate, secured access path is deliberately configured. Confirm that Prometheus has live targets before relying on Grafana dashboards or alerts. Add host and OpenStack service metrics gradually; a dashboard without verified data is not monitoring.
 
