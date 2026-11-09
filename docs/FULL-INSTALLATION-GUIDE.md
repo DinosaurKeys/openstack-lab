@@ -171,8 +171,18 @@ Kolla needs a management interface and a separate Neutron external interface. Fo
 
 - The management NIC carries SSH, Ansible, API/database traffic, and the default Neutron tunnel traffic.
 - The second NIC connects to the shared lab switch and is reserved for Neutron provider networking. It must be active at Layer 2 with no configured provider-subnet address or default route; an automatic IPv6 link-local address may still appear. Kolla/Neutron will attach it to the external bridge.
-- This isolated provider network does not automatically have Internet access or a gateway. Add a separately designed upstream connection if floating IPs or external connectivity are required.
+- The provider NIC's link alone does not provide Internet access. Before Step 10, trace each provider cable to its switch and VLAN. Record whether that network has an upstream router, its subnet and gateway, and whether the upstream firewall permits the traffic you need. If it is isolated, floating IPs can work only between systems that can reach that isolated network; Internet access needs an upstream connection.
 - If you require a separate tunnel/underlay network as well as management and provider networks, add a third interface per node before proceeding.
+
+For the optional floating-IP exercise in Step 10, agree on a dedicated allocation range with the network administrator. Reserve it outside DHCP and all other static allocations, including the gateway, management addresses and VIP. Record the actual source address or subnet from which you will test SSH; a management VM behind NAT may appear under a different source address. Do not infer a safe range from a failed ping.
+
+### Plan the node SSDs
+
+The intended lab layout is an NVMe OS disk and a separate SATA SSD on each node for possible Cinder LVM storage. This is a storage plan, not permission to initialize disks. On each node, inspect `lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL`, then follow Step 11 to inspect existing LVM metadata and verify stable device identities. Device names can change, and an SSD with existing data or an LVM signature must not be treated as empty. Keep a verified backup that covers any data at risk before approving disk changes.
+
+Keep VM security groups in Step 10: they are OpenStack port firewall rules, not host firewall or Netplan settings.
+
+### Configure the node interfaces
 
 Identify each interface by MAC address and cable path from the physical console. Use these read-only commands on each node, and label the cables before changing configuration:
 
@@ -718,32 +728,190 @@ openstack server show lab-smoke -c status -c addresses
 
 The target status is `ACTIVE`. If the command fails or the VM reports `ERROR`, stop and investigate the redacted error; do not create another VM. `ACTIVE` confirms the VM boot request completed, but does not by itself prove guest connectivity. No SSH key or external connectivity is configured by this smoke test.
 
-Do not create a provider/external network until the Layer-2 switch, gateway, and address-allocation plan are explicit. Do not run Kolla's `init-runonce` blindly; its example networks and addresses may conflict with the real network plan.
+Base VM completion: authentication, service and endpoint checks succeed, and the sandbox VM reaches `ACTIVE` on the private network. Continue to 10.6 when you want to test a floating IP; it is a separate network configuration, not a requirement for the boot-only test.
 
-Completion: authentication, service and endpoint checks succeed, and the sandbox VM reaches `ACTIVE` on the private network.
+### 10.6 — Add a floating IP and a security group
 
-## Step 11 — Add block storage only after choosing a backend
+A floating IP provides an address on the provider network for reaching the VM. A Neutron router connects that network to the private subnet. A security group acts as the VM port's firewall. The path looks like this:
 
-The base cloud can be installed without Cinder. Choose and document a backend before enabling it:
-
-- For replicated/high-availability block storage, use a supported shared or distributed backend such as a correctly designed Ceph deployment or a supported external storage system. Follow the corresponding Kolla guide and verify the driver’s active/active support.
-- A local LVM Cinder backend is useful for a lab exercise but is not replicated storage. Kolla’s Cinder documentation also notes limitations for LVM in a multi-controller deployment. Do not label local LVM volumes highly available.
-
-If you explicitly choose the LVM exercise, first identify a dedicated, expendable device by model, serial, and stable `/dev/disk/by-id/` path on every storage host. The following operations erase storage metadata. Do not run them until the device mapping, backup, and rollback plan are approved:
-
-Before enabling the backend, add only the selected real host aliases to the inventory’s `[storage]` group and follow the 2026.2 Cinder guide’s `cinder-volume-lvm` mapping. The copied sample’s `storage01` is not a real host; do not leave it in the inventory. If no host has a safe dedicated device, skip Cinder and keep `[storage]` empty.
-
-Run once per selected storage host, replacing the example path with that host’s own confirmed device. The commands below are destructive; the placeholder path does not exist and must not be replaced until the device is approved:
-
-```bash
-CINDER_DEVICE="/dev/disk/by-id/REPLACE_WITH_VERIFIED_EMPTY_DEVICE"
-sudo pvcreate "$CINDER_DEVICE"
-sudo vgcreate cinder-volumes "$CINDER_DEVICE"
+```text
+trusted workstation -> provider network / floating IP -> Neutron router
+  -> lab-private -> VM port security group -> lab-smoke
 ```
 
-Then follow the Kolla-Ansible 2026.2 Cinder guide to enable Cinder, the LVM backend, and the release-matched inventory groups. Do not copy an old inventory-group example from another Kolla release. Re-run `prechecks`, then `deploy` or `reconfigure` as directed by that guide, and test volume create/attach/detach with a disposable instance.
+A floating IP can be a **private LAN address**, not a public Internet address. Outbound access can work without a floating IP when the router provides SNAT and the upstream gateway, DNS and egress rules work. Conversely, assigning a floating IP does not by itself make SSH or Internet access work.
 
-Completion: the selected backend, its failure limits, and the restore procedure are documented; a disposable volume can be created and attached if Cinder was enabled.
+#### Check the prerequisites
+
+Run the OpenStack commands on the management VM in the environment from 10.1. These checks do not create resources:
+
+```bash
+openstack network list --long
+openstack subnet list --long
+openstack router list
+openstack server show lab-smoke
+openstack port list --server lab-smoke --long
+openstack security group list
+openstack floating ip list
+```
+
+Inspect any existing matching network, subnet, router, VM port and security group before creating another. Note the VM's private fixed IPv4 address and whether the subnet is already attached to a router. Security-group rules are additive across all groups on a port; inspect existing groups and rules as well as the new group. Review effects on existing workloads before changing a shared router or VM port.
+
+**Stop until the Step 4 network plan is confirmed:** the provider switch/VLAN and uplink, Neutron physical-network mapping and network type, external CIDR and upstream gateway, and a dedicated address allocation pool excluded from DHCP and all static assignments. Reserve enough addresses for the router gateway and floating IP. A provider NIC showing link is not proof of upstream connectivity. Confirm your trusted SSH source address as seen by the VM's network, and confirm that guest SSH access and credentials are ready. The boot-only `lab-smoke` example did not inject an SSH key; attaching a security group later does not add one. Use an approved console or other existing secure access to provision a key, or plan a separately approved replacement VM; do not publish private keys or passwords.
+
+The examples below create real cloud resources. Replace every `<...>` placeholder with a verified value before running a command. Stop if a command fails. Creating Neutron resources does not configure the physical switch, DHCP server or upstream router.
+
+For a new lab, set the names below in the **same management terminal**. To reuse an existing resource, replace the appropriate value with its verified ID and **skip its creation command**. Check the exact target before every operation; do not assume a reused router, subnet or group is dedicated to this test. Record the VM port's existing security groups and floating-IP associations before making changes, and record which resources you create and attach.
+
+```bash
+EXT_NET='lab-external'
+EXT_SUBNET='lab-external-subnet'
+ROUTER='lab-router'
+PRIVATE_SUBNET='lab-private-subnet'
+ACCESS_GROUP='lab-vm-access'
+VM='lab-smoke'
+VM_PORT='<verified-vm-port-id>'
+```
+
+Use unique IDs in these variables if names are ambiguous. Replace the `VM_PORT` placeholder with the ID of the intended VM port and inspect it with `openstack port show "$VM_PORT"`. Record its current group IDs before making changes, and stop if concurrent changes are occurring. When reusing a security group, inspect its existing rules and whether it is already attached; do not add duplicate rules or claim that the group is dedicated to this VM. The floating-IP example below allocates a **new** address; using an existing floating IP needs its own ownership and impact review.
+
+#### Create an external network and router if needed
+
+This example is **only for an approved flat provider network**. A VLAN network needs the verified VLAN segment instead; do not use the flat example for it. Verify the Neutron physical-network mapping on the hosts first.
+
+```bash
+openstack network create --external --provider-network-type flat \
+  --provider-physical-network '<verified-physnet>' "$EXT_NET"
+```
+
+Only if the network exists and the external subnet does not, create the subnet. The address pool must be reserved for Neutron and must include enough free addresses for the router and floating IP:
+
+```bash
+openstack subnet create --network "$EXT_NET" \
+  --subnet-range '<external-cidr>' --gateway '<upstream-gateway>' \
+  --allocation-pool start='<pool-start>',end='<pool-end>' \
+  --no-dhcp "$EXT_SUBNET"
+```
+
+Inspect the resulting network and subnet. If the private subnet is already attached to a suitable router, set `ROUTER` to that router's verified ID and inspect it; **skip creation, gateway changes and subnet attachment** unless separately reviewed and approved. Otherwise, create a dedicated router and attach the existing private subnet:
+
+```bash
+openstack router create "$ROUTER"
+openstack router set --external-gateway "$EXT_NET" "$ROUTER"
+openstack router add subnet "$ROUTER" "$PRIVATE_SUBNET"
+```
+
+For either path, inspect the router and ports:
+
+```bash
+openstack router show "$ROUTER"
+openstack port list --router "$ROUTER"
+```
+
+Run each line only if the previous one succeeds. Check that the router's gateway port received an address on the intended external subnet. If the external network has multiple subnets, verify gateway subnet selection; do not assume it. Check the router's external gateway and SNAT settings before testing outbound traffic.
+
+#### Allow only the access you need
+
+Choose a trusted IPv4 source CIDR, preferably one workstation's `/32`, based on the address actually seen by the provider network. For example, VMware NAT can change the source. If the selected group already exists, skip this creation block and inspect its rules instead; changing a shared group affects every port using it. Otherwise create a new group and permit inbound SSH and ping only from that source:
+
+```bash
+openstack security group create "$ACCESS_GROUP"
+openstack security group rule create --ingress --ethertype IPv4 \
+  --protocol tcp --dst-port 22 --remote-ip '<trusted-source-cidr>' "$ACCESS_GROUP"
+openstack security group rule create --ingress --ethertype IPv4 \
+  --protocol icmp --remote-ip '<trusted-source-cidr>' "$ACCESS_GROUP"
+```
+
+Inspect the selected group's rules:
+
+```bash
+openstack security group rule list "$ACCESS_GROUP"
+```
+
+Only if the reviewed group is **not already attached to this port**, attach it and record that this exercise added the association:
+
+```bash
+openstack port set --security-group "$ACCESS_GROUP" "$VM_PORT"
+openstack port show "$VM_PORT"
+```
+
+This operation targets the selected port. Compare its resulting groups with the recorded original list. Adding this group does not remove or restrict the port's existing groups. Confirm effective rules, port security, guest firewall, SSH service and credentials before treating the VM as reachable. Do not open SSH to `0.0.0.0/0` for convenience.
+
+#### Allocate, associate and verify
+
+Allocate a floating IP from the confirmed external subnet. Record the returned address and ID; do not run the allocation again simply because association fails:
+
+```bash
+openstack floating ip create --subnet "$EXT_SUBNET" "$EXT_NET"
+```
+
+Use the returned address, the verified VM port and its fixed IPv4 address. This selects the intended port explicitly, even when the VM has multiple ports:
+
+```bash
+openstack floating ip set --port "$VM_PORT" --fixed-ip-address '<vm-fixed-ip>' \
+  '<floating-ip>'
+openstack floating ip show '<floating-ip>'
+openstack server show "$VM"
+openstack port list --server "$VM" --long
+```
+
+Check that the floating IP shows the intended fixed IP, VM port and router. From a host in the approved source CIDR with a route to the provider network, test `ping <floating-ip>` and then `ssh <guest-user>@<floating-ip>` with your authorized key. A failed ping can be upstream ICMP filtering; a successful API association alone does not prove network or guest access. From the guest console, separately test the gateway, external IP connectivity and DNS. External firewall rules, upstream NAT and DNS can each affect the result.
+
+If rollback is needed, first inspect the floating IP. **Only if this exercise associated it and it still points to the recorded port**, remove that association:
+
+```bash
+openstack floating ip unset --port '<floating-ip>'
+```
+
+Then, only if this exercise allocated the address and it is unassociated, release it. A failed association does not require a disassociation first:
+
+```bash
+openstack floating ip delete '<floating-ip>'
+```
+
+Only if this exercise added the security group to the **same recorded port**, remove that port association. Never remove a group that was already attached before the exercise. Stop if the port's associations have changed unexpectedly; review concurrent changes first:
+
+```bash
+openstack port unset --security-group "$ACCESS_GROUP" "$VM_PORT"
+openstack port show "$VM_PORT"
+```
+
+Review ownership and dependencies before deleting any network, subnet, router or security group. Do not remove a gateway or interface from a shared router without a separate impact review. Do not run Kolla's `init-runonce` blindly; its example networks and addresses may conflict with the real network plan.
+
+Floating-IP completion: the VM remains `ACTIVE`, the floating IP is associated with the expected port, and permitted inbound and outbound tests work from the intended networks. Record any test that was not performed.
+
+## Step 11 — Plan local SSD storage for Cinder
+
+This lab uses a separate SATA SSD on each of the three nodes; the NVMe disks run Ubuntu. The intended Cinder backend is local LVM, not Ceph. Think of each SSD as a separate local datastore: the three disks do **not** become a replicated or shared pool, and a node failure can make that node's volumes unavailable. Snapshots are not a substitute for a tested backup.
+
+### 11.1 — Inspect each SSD before changing it
+
+On **each storage candidate**, run these read-only commands. Record the model, serial or stable `/dev/disk/by-id/` identity, partitions, existing volume groups and logical volumes. Do not rely on `/dev/sda` staying the same across boots:
+
+```bash
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS,MODEL,SERIAL
+sudo pvs -o pv_name,vg_name,pv_size,pv_free
+sudo vgs -o vg_name,vg_size,vg_free
+sudo lvs -a -o vg_name,lv_name,lv_size,lv_attr,data_percent,metadata_percent,pool_lv
+```
+
+**Stop if the disk already has a filesystem, partition, PV, VG or other data.** Investigate and preserve it. If `cinder-volumes` and its thin pool already exist, inspect their health and contents; do **not** rerun `pvcreate` or `vgcreate` on them. An empty `storage` inventory group does not prove the disks are unused. Also verify the NVMe OS disk separately so it cannot be mistaken for the SATA SSD.
+
+Before any disk initialization or reconfiguration, identify the exact device on each host, confirm a verified backup or snapshot covers all data at risk, and agree on the rollback. Initializing a disk can destroy its existing metadata and data; an untested archive is not a verified restore.
+
+### 11.2 — Decide how Cinder will use the three disks
+
+Kolla's LVM backend documentation warns about multi-controller configurations. Its multi-host `cinder-volume` precheck also expects a cluster configuration; local LVM is not replicated shared storage. Do not simply add three hosts to `[storage]`, set a shared cluster name, or bypass the precheck and assume it creates three independent, safe backends. Review the installed Kolla release's inventory, Cinder driver support and a tested per-host backend design first. If that design is not validated, keep Cinder disabled and the existing SSD data untouched; a single explicitly chosen LVM backend is a simpler lab alternative, subject to the same checks.
+
+Check both inventory groups before choosing even one storage host: the installed precheck counts `cinder-volume`, while LVM service placement may use `cinder-volume-lvm`. In a stock multinode inventory, `cinder-volume` can inherit all three control hosts even when the LVM group has only one storage host. A single selected storage node therefore does not by itself guarantee prechecks pass. Inspect the installed release's actual group mappings and precheck; do not set a cluster name merely to get past it. A VG existence check alone also does not prove a backend is safe or usable.
+
+Once a design is approved, map only the selected real hosts into the release-matched inventory. The sample `storage01` is not a real host. Review the configuration, backup, resource impact and deployment plan before enabling Cinder or running Kolla prechecks and deployment. The installed Kolla defaults also enable the optional Cinder backup service and select a Ceph backup driver; review and explicitly configure or disable that service for a lab without Ceph rather than assuming the defaults fit. The [Kolla-Ansible Cinder guide](https://docs.openstack.org/kolla-ansible/2026.2/reference/storage/cinder-guide.html) explains the LVM backend and its multi-controller warning; use the documentation matching the installed release.
+
+### 11.3 — Verify a deployed backend
+
+After a separately approved deployment, check that the expected `cinder-volume` services and backend pools are registered. Create one disposable volume, attach it to a test VM, verify guest access, detach it and test recovery according to the approved procedure. Check all intended backend hosts; registering a service does not prove its storage can be used. Do not call the three local SSDs highly available.
+
+Completion: the chosen backend and its failure limits are documented, the expected services and pools are visible, and a disposable volume has been created, attached and detached successfully. Until then, this is a storage plan, not a working Cinder deployment.
 
 ## Step 12 — Add Terraform after the manual cloud test
 
