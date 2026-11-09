@@ -188,6 +188,33 @@ Compare the running members with the configured `rabbitmq` inventory group and c
 
 A restart is an **intentional service interruption**, not a health check. First identify the exact affected node and service, inspect its recent errors, and check its dependencies, workloads, and remaining replicas. Restarting a compute service or network agent can affect workloads or networking; do not assume another replica can carry the load. A running process or HTTP error alone does not identify the cause. Do not repeatedly restart a service when the cause or outcome is unclear.
 
+### Open vSwitch agent: identify and recover one affected node
+
+Run these commands on the **management VM**, with the Kolla environment active. The service's systemd name is case-sensitive: use `kolla-neutron_openvswitch_agent-container.service`, not the human-readable agent name. `kolla-Neutron-Open-vSwitch-agent.service` is not the Kolla unit name.
+
+1. Find the affected host and check its heartbeat:
+
+   ```bash
+   openstack network agent list --agent-type open-vswitch
+   ```
+
+   A DOWN heartbeat is separate from systemd state: a unit and container can be running while the agent is not reporting to Neutron. If this command fails because the network API is unavailable, **do not infer agent health**; diagnose the API and its dependencies first.
+2. Review the selected host's workloads and network impact, Galera and RabbitMQ health, Neutron server/RPC health, and the remaining agents. Check the actual unit exists and is loaded. In the next command, replace `NODE_ALIAS` with the affected host's inventory alias; do not type `NODE_ALIAS` literally:
+
+   ```bash
+   ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl show kolla-neutron_openvswitch_agent-container.service -p LoadState -p ActiveState -p SubState'
+   ```
+
+   The Ansible command module may report `CHANGED` for this read-only query. A missing unit or an unavailable dependency is a stop condition, not an instruction to create a unit. Review sanitized agent logs when the cause is unclear; never paste credentials or unredacted logs into chat.
+3. **Only after reviewing the impact and approving the restart**, target that same one host:
+
+   ```bash
+   ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-neutron_openvswitch_agent-container.service'
+   ```
+
+   Add `-K` if the node requires an interactive sudo password. This restarts the agent; it does not intentionally restart the Open vSwitch database or switch processes. Systemd dependencies and workloads can still be affected. A successful command means the request completed, not that the agent heartbeat recovered.
+4. Run `openstack network agent list --agent-type open-vswitch` again. Confirm the **same host** reports alive and enabled. Also verify its container health and the affected network workloads. If the heartbeat stays down, the API is unavailable, or the restart outcome is unclear, stop and investigate; do not repeatedly restart it or move to another node.
+
 ### From the management VM
 
 From the repository root with the Kolla environment active, choose **one** inventory alias shown in the table and **one** approved service name from the reference below. This example selects `nova_compute`; replace `NODE_ALIAS` with the actual affected inventory alias:
@@ -199,6 +226,24 @@ bash scripts/lab-recover.sh --restart --node NODE_ALIAS --service nova_compute
 The tool shows the selected node, literal inventory IP, and service and requires the exact confirmation phrase displayed, then prompts for the node sudo password locally. It requires an SSH target with a literal inventory IP and refuses local, loopback, or management-interface addresses; if your inventory uses only a DNS name, configure and review its literal `ansible_host` first. The tool rechecks the inventory after confirmation and pins the chosen address, but it cannot eliminate all concurrent-change races. Do not put the password in chat or in the command. If confirmation is declined, no restart is sent. The playbook validates the one-node target and allowlist, checks the unit and existing container, requests one restart of the selected unit, and checks its resulting state. Systemd dependencies can affect other units. It does **not** establish healthy dependencies, sufficient capacity, application-level health, or quorum on your behalf; those require separate review. A stopped existing unit may be started by `restart`. If a check fails or the outcome is unclear, stop and inspect the result; do not blindly repeat the action. The confirmation is an operator safeguard, not an access-control boundary; an administrator can still invoke systemd directly.
 
 The tool deliberately excludes MariaDB and RabbitMQ from its generic restart action. Do not use individual systemd restarts as a substitute for Galera or RabbitMQ cluster recovery. Follow the database section above or a broker-specific procedure.
+
+### Ansible quick reference: run on the management VM
+
+These are **alternative commands, not a batch**. Select one affected component and one host after the checks above. Replace `NODE_ALIAS` with the affected inventory alias; do not type it literally. Add `-K` when sudo needs a password. Verify the same service's container health and OpenStack heartbeat afterward. Do not restart an agent solely because its unit is ACTIVE or because a different node reports DOWN.
+
+| Component | Ansible command on the management VM |
+|---|---|
+| Nova compute | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-nova_compute-container.service'` |
+| Nova conductor | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-nova_conductor-container.service'` |
+| Nova scheduler | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-nova_scheduler-container.service'` |
+| Nova API | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-nova_api-container.service'` |
+| Placement API | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-placement_api-container.service'` |
+| Neutron server API | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-neutron_server-container.service'` |
+| Neutron Open vSwitch agent | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-neutron_openvswitch_agent-container.service'` |
+| Neutron router / L3 agent | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-neutron_l3_agent-container.service'` |
+| Neutron DHCP agent | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-neutron_dhcp_agent-container.service'` |
+| Neutron metadata agent | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-neutron_metadata_agent-container.service'` |
+| Cinder scheduler | `ansible -i /etc/kolla/multinode NODE_ALIAS -b -m ansible.builtin.command -a 'systemctl restart kolla-cinder_scheduler-container.service'` |
 
 ### Direct quick reference: on the affected node only
 
