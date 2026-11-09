@@ -15,6 +15,20 @@ The generated Kolla cloud is normally named `kolla-admin`; choose your configure
 
 **Scope:** the health checks and the default `lab-recover.sh` view are read-only. They do not stop or restart services, create or delete VMs, or repair the database. Its separate `--restart` action is an explicit, confirmed change to one selected service on one selected node; see [manual service restart](#6-manual-service-restart). This repository does not yet provide a verified automatic, dependency-ordered shutdown or out-of-band power-on. Do not copy another lab's helper scripts or fixed host order without verifying that its inventory, container engine, service units, and storage match yours.
 
+### Quick path after a full shutdown
+
+1. Power on the physical nodes and leave the management VM running. If the previous shutdown was the simultaneous fallback below, **there is no verified last database member**; do not assume a particular boot order prevents recovery.
+2. From this repository on the management VM, run `bash scripts/lab-recover.sh --check`. This is an observation, not a repair. Then use `bash scripts/lab-recover.sh --full` for the sampled Galera and local RabbitMQ checks; it prompts for sudo even if passwordless sudo is configured. Check RabbitMQ membership separately as described below.
+3. If the database is healthy, **leave it alone**. If it is unavailable, use [the MariaDB decision table](#4-if-the-database-is-unavailable) before deciding whether coordinated recovery is appropriate.
+4. Once Galera and RabbitMQ are healthy, check the affected API backends and service/agent heartbeats. Repair only a named, confirmed failure; a successful MariaDB recovery does not guarantee its dependent applications recovered.
+5. Run the dashboard again and separately verify guest networking, data, and storage. No dashboard result replaces a workload test.
+
+### How the previous lab's shutdown differs
+
+The previous lab's `lab-shutdown.py --apply` implements a two-stage design: it checks readiness and stops cloud clients and agents first, then proxies and RabbitMQ, then MariaDB members one at a time, checking clean exits and database positions. A separate `lab-poweroff.sh --apply` checks a saved shutdown record before scheduling host poweroff. That is a more deliberate approach than simultaneous OS shutdown.
+
+**Those scripts are not implemented or validated in this repository.** They depend on the previous lab's helper modules, paths, inventory, supported Kolla source, and container allowlist. For example, a deployment with Heat services needs those services accounted for. Do not run the other lab's command here or treat its `READY_FOR_MANUAL_POWEROFF` result as available. An adapted workflow must be tested against this deployment, including interrupted shutdown and recovery, before it can replace the fallback below. Ordered shutdown reduces uncertainty but does not guarantee automatic Galera recovery after the next power-on.
+
 ## 1. Before shutting down
 
 1. Finish OpenStack operations and stop or cleanly shut down every guest and any other workload. From the management VM, after activating the Kolla environment, list VMs across projects:
@@ -56,7 +70,7 @@ ansible -i /etc/kolla/multinode 'control:compute:network:storage' -b -K \
   -m ansible.builtin.command -a '/sbin/shutdown -c'
 ```
 
-Enter your sudo password if prompted. Review the cancellation result on every host. The five-minute window is not guaranteed to be enough; cancellation cannot reach an already stopped or disconnected host. If any result is uncertain, do not assume the cluster shut down cleanly.
+Enter your sudo password if prompted. Review the cancellation result on every host. **The countdown may disable new SSH logins immediately**, including while the machines still answer on port 22. In that case the Ansible cancellation cannot connect; use an already-open privileged console or other verified console access instead. The five-minute window is not guaranteed to be enough; cancellation cannot reach an already stopped or disconnected host. If any result is uncertain, do not assume the cluster shut down cleanly. After the scheduled time, SSH unreachability alone does not prove physical power-off.
 
 ## 3. Power on and run the automated health check
 
@@ -181,6 +195,14 @@ Compare the running members with the configured `rabbitmq` inventory group and c
   ```
 
   These logs may include private information or service credentials. Redact them before sharing. If the container is stopped or restarting, `docker exec` may fail; inspect that container's state and find the persistent Kolla log volume instead of inferring the cause. Restart only a reviewed affected service after checking its dependencies; do not restart the entire cloud blindly.
+
+  **Check the affected backend, not just the shared VIP.** For example, when Neutron is configured to listen on the node management address and port 9696, replace `NODE_MGMT_IP` with the affected node's actual address and run this from the management VM:
+
+  ```bash
+  curl --noproxy '*' -s -o /dev/null --max-time 5 -w '%{http_code}\n' http://NODE_MGMT_IP:9696/
+  ```
+
+  HTTP `200` verifies only that this unauthenticated root request received a response. HTTP `500` indicates that backend returned an error; it does not by itself identify the cause. `000` or a failed command means the probe could not establish a response, including when this deployment binds elsewhere. Check Galera, RabbitMQ, Neutron RPC services, and the affected backend's application and uWSGI logs; if those dependencies are healthy and the selected backend requires a restart, use the Neutron server row in the Ansible quick reference below. Verify the backend and agents again before touching another node.
 - **A compute or network service reports down:** check its heartbeat, admin state, container and dependencies separately. A disabled service may be intentionally in maintenance; do not automatically enable it.
 - **A VM remains in BUILD or ERROR:** inspect the existing VM and its redacted error first. Do not issue a duplicate create command or delete it without reviewing its contents.
 
