@@ -4,6 +4,7 @@ import argparse
 import concurrent.futures
 import re
 import json
+import os
 import shlex
 import subprocess
 
@@ -31,7 +32,7 @@ def group_hosts(inventory, groups):
 
 def run(args, suppress=False):
     try:
-        p = subprocess.run(args, stdout=subprocess.DEVNULL if suppress else subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+        p = subprocess.run(args, stdout=subprocess.DEVNULL if suppress else subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL, env=dict(os.environ, ANSIBLE_BECOME_ASK_PASS='false'))
         return p.returncode, (p.stdout or '') + (('\n' + (p.stderr or '')) if args[0] == 'ansible' else '')
     except (OSError, subprocess.TimeoutExpired):
         return None, ''

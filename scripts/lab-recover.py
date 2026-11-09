@@ -84,7 +84,8 @@ def observe_node(host, inventory_path):
     try:
         proc = subprocess.run(['ansible', host + ',', '-i', inventory_path, '-e', '{"ansible_become": false}',
                                '-m', 'ansible.builtin.shell', '-a', command], stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True, timeout=40)
+                              stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True, timeout=40,
+                              env=dict(os.environ, ANSIBLE_BECOME_ASK_PASS='false'))
         if proc.returncode != 0:
             return {name: 'BLOCKED' for name in SERVICES}
         found = {}
@@ -213,7 +214,7 @@ def check(inventory_path, cloud):
     vm_rows, vm_issue = cloud_workloads(cloud)
     render_rows([['VM', 'STATUS']] + vm_rows)
     print('VM status alone does not prove guest connectivity or storage health.')
-    print('Use --full for the host/cloud and sudo-prompted MariaDB/RabbitMQ checks.')
+    print('Use --full for the host/cloud and MariaDB/RabbitMQ checks; add --ask-become-pass if needed.')
     unit_issue = any(value in ('BLOCKED', 'FAILED', 'STOPPED', 'STARTING', 'MISSING') for row in states.values() for value in row.values())
     return 1 if unit_issue or heartbeat_issue or vm_issue or coverage_notes else 0
 
@@ -235,7 +236,7 @@ def local_addresses():
     return addresses
 
 
-def restart(inventory_path, node, service):
+def restart(inventory_path, node, service, ask_become_pass=False):
     if service not in RESTART_SERVICES:
         print('BLOCKED: service is not in the approved restart list; MariaDB and RabbitMQ are excluded.')
         return 2
@@ -270,7 +271,7 @@ def restart(inventory_path, node, service):
         print('BLOCKED: this action requires an SSH inventory connection.')
         return 2
     if not sys.stdin.isatty():
-        print('BLOCKED: a local interactive terminal is required for confirmation and sudo.')
+        print('BLOCKED: a local interactive terminal is required for confirmation.')
         return 2
     phrase = f'RESTART {node} {service}'
     print(f'\nSelected: {service} on {node} only (target address: {target_ip}).')
@@ -301,11 +302,22 @@ def restart(inventory_path, node, service):
         values['ansible_user'] = metadata.get('ansible_user') or metadata.get('ansible_ssh_user')
     if metadata.get('ansible_port'):
         values['ansible_port'] = metadata['ansible_port']
+    if not ask_become_pass:
+        values['ansible_become_flags'] = '-H -n'
     extra = json.dumps(values)
-    env = dict(os.environ, ANSIBLE_DISPLAY_SKIPPED_HOSTS='false')
-    command = ['ansible-playbook', '-i', inventory_path, str(ROOT / 'ansible/playbooks/lab-restart-service.yml'), '-K', '-e', extra]
+    env = dict(os.environ, ANSIBLE_DISPLAY_SKIPPED_HOSTS='false',
+               ANSIBLE_BECOME_ASK_PASS='true' if ask_become_pass else 'false')
+    if not ask_become_pass:
+        env['ANSIBLE_BECOME_FLAGS'] = '-H -n'
+    command = ['ansible-playbook', '-i', inventory_path, str(ROOT / 'ansible/playbooks/lab-restart-service.yml')]
+    if ask_become_pass:
+        command.append('-K')
+    command.extend(['-e', extra])
     try:
-        return subprocess.run(command, env=env, check=False).returncode
+        result = subprocess.run(command, env=env, check=False).returncode
+        if result and not ask_become_pass:
+            print('Restart failed or was incomplete. Check the service state before any retry; if sudo needs a password, use --ask-become-pass.')
+        return result
     except OSError:
         print('BLOCKED: ansible-playbook could not be started; no success claimed.')
         return 1
@@ -324,18 +336,24 @@ def main(argv=None):
     parser.add_argument('--service', help='one exact approved service name')
     parser.add_argument('--inventory', default='/etc/kolla/multinode')
     parser.add_argument('--cloud', default='kolla-admin')
+    parser.add_argument('-K', '--ask-become-pass', action='store_true', help='prompt locally for the sudo password (with --full or --restart)')
     args = parser.parse_args(argv)
+    if args.ask_become_pass and not (args.full or args.restart):
+        parser.error('--ask-become-pass requires --full or --restart')
     if args.restart and (not args.node or not args.service):
         parser.error('--restart requires both --node and --service')
     if args.restart:
-        return restart(args.inventory, args.node, args.service)
+        return restart(args.inventory, args.node, args.service, args.ask_become_pass)
     if args.node or args.service:
         parser.error('--node and --service are only valid with --restart')
     if args.full:
         quick_result = check(args.inventory, args.cloud)
         sys.stdout.flush()
         try:
-            full_result = subprocess.run(['bash', str(ROOT / 'scripts/lab-health-full.sh'), '--inventory', args.inventory, '--cloud', args.cloud], check=False).returncode
+            command = ['bash', str(ROOT / 'scripts/lab-health-full.sh'), '--inventory', args.inventory, '--cloud', args.cloud]
+            if args.ask_become_pass:
+                command.append('--ask-become-pass')
+            full_result = subprocess.run(command, check=False).returncode
             return 1 if quick_result or full_result else 0
         except OSError:
             print('BLOCKED: full health dashboard could not be started.')

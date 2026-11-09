@@ -4,21 +4,34 @@
 
 This is the day-to-day procedure for a Kolla-Ansible lab. In VMware terms, the management VM is the administration workstation; the OpenStack nodes are the hosts that run the cloud. Leave the management VM running while you operate on the nodes.
 
-On the management VM, activate the Kolla environment before running commands in this guide:
+On R2D2, this repository is at `$HOME/fishbone`. From any R2D2 terminal, enter it and activate the Kolla environment:
 
 ```bash
-source "$HOME/.venvs/kolla-2026.2/bin/activate"
+cd "$HOME/fishbone" && source "$HOME/.venvs/kolla-2026.2/bin/activate"
+```
+
+Do not continue if that command fails. For a clone in another location, use its actual path instead. The helper commands below use absolute paths for this R2D2 clone, so they also work from another directory once the Kolla environment is active. The direct `openstack` CLI examples use the `kolla-admin` cloud:
+
+```bash
 export OS_CLOUD=kolla-admin
 ```
 
-The generated Kolla cloud is normally named `kolla-admin`; choose your configured cloud name instead if it differs. For commands under `scripts/`, first change into your local clone of this repository. Do not paste secrets from `clouds.yaml` or `/etc/kolla/passwords.yml` into the terminal or chat.
+The helpers have their own `kolla-admin` default; if using a different configured cloud, pass their `--cloud NAME` option as well as selecting the cloud for direct CLI commands. Do not paste secrets from `clouds.yaml` or `/etc/kolla/passwords.yml` into the terminal or chat.
+
+These examples assume passwordless become has been verified on the intended nodes. For Ansible ad-hoc commands, add `-K` if sudo needs an interactive password and enter it only at the local prompt. A harmless privilege check on the reviewed target group is:
+
+```bash
+ansible -i /etc/kolla/multinode 'control:compute:network:storage' -b -m ansible.builtin.command -a 'id -u'
+```
+
+Every intended node must return `0`; Ansible may label this read-only command `CHANGED`. A failure does not prove the account lacks sudo: it may require a password. For Kolla itself, which does not accept `-K`, use `ANSIBLE_BECOME_ASK_PASS=true` if a secure local prompt is required.
 
 **Scope:** the health checks and the default `lab-recover.sh` view are read-only. They do not stop or restart services, create or delete VMs, or repair the database. Its separate `--restart` action is an explicit, confirmed change to one selected service on one selected node; see [manual service restart](#6-manual-service-restart). This repository does not yet provide a verified automatic, dependency-ordered shutdown or out-of-band power-on. Do not copy another lab's helper scripts or fixed host order without verifying that its inventory, container engine, service units, and storage match yours.
 
 ### Quick path after a full shutdown
 
 1. Power on the physical nodes and leave the management VM running. If the previous shutdown was the simultaneous fallback below, **there is no verified last database member**; do not assume a particular boot order prevents recovery.
-2. From this repository on the management VM, run `bash scripts/lab-recover.sh --check`. This is an observation, not a repair. Then use `bash scripts/lab-recover.sh --full` for the sampled Galera and local RabbitMQ checks; it prompts for sudo even if passwordless sudo is configured. Check RabbitMQ membership separately as described below.
+2. From R2D2, run `bash "$HOME/fishbone/scripts/lab-recover.sh" --check`. This is an observation, not a repair. Then use `bash "$HOME/fishbone/scripts/lab-recover.sh" --full` for the sampled Galera and local RabbitMQ checks. The full check defaults to noninteractive sudo; add `--ask-become-pass` if a local password prompt is required. Check RabbitMQ membership separately as described below.
 3. If the database is healthy, **leave it alone**. If it is unavailable, use [the MariaDB decision table](#4-if-the-database-is-unavailable) before deciding whether coordinated recovery is appropriate.
 4. Once Galera and RabbitMQ are healthy, check the affected API backends and service/agent heartbeats. Repair only a named, confirmed failure; a successful MariaDB recovery does not guarantee its dependent applications recovered.
 5. Run the dashboard again and separately verify guest networking, data, and storage. No dashboard result replaces a workload test.
@@ -57,16 +70,16 @@ The preferred path is a verified, deployment-specific, dependency-ordered shutdo
 On the **management VM**, run once:
 
 ```bash
-ansible -i /etc/kolla/multinode 'control:compute:network:storage' -b -K \
+ansible -i /etc/kolla/multinode 'control:compute:network:storage' -b \
   -m ansible.builtin.command -a '/sbin/shutdown -h +5'
 ```
 
-Enter your sudo password at the local terminal prompt. This schedules poweroff in five minutes, allowing time to review the scheduling results; `CHANGED` means a shutdown was requested, **not** that power is already off. Check the Ansible result for every intended host and confirm physical power state via the console or out-of-band controller before removing electricity. Loss of SSH alone does not prove a host is powered off.
+This schedules poweroff in five minutes, allowing time to review the scheduling results; `CHANGED` means a shutdown was requested, **not** that power is already off. Check the Ansible result for every intended host and confirm physical power state via the console or out-of-band controller before removing electricity. Loss of SSH alone does not prove a host is powered off.
 
 If any target fails, is unreachable, or is unexpected, try to cancel immediately with this command from the management VM, using the same target pattern:
 
 ```bash
-ansible -i /etc/kolla/multinode 'control:compute:network:storage' -b -K \
+ansible -i /etc/kolla/multinode 'control:compute:network:storage' -b \
   -m ansible.builtin.command -a '/sbin/shutdown -c'
 ```
 
@@ -80,25 +93,25 @@ For a compact, table-form overview first, run the following from the repository 
 
 ```bash
 source "$HOME/.venvs/kolla-2026.2/bin/activate"
-bash scripts/lab-recover.sh
+bash "$HOME/fishbone/scripts/lab-recover.sh"
 ```
 
 This is read-only and does not ask for sudo. It shows each selected node's Kolla systemd unit state, reported Compute service and Network agent heartbeats, and VM statuses. An `ACTIVE` systemd unit does **not** prove its container, API, or cluster is healthy. `ABSENT` means the unit was not found on that node; verify whether it is expected there. `MISSING` means a core unit is absent on a host in its corresponding inventory group. Compute heartbeat coverage is compared with `compute` inventory aliases; if service hostnames differ from aliases, investigate the resulting `BLOCKED` status. Other service and agent rows are API-reported only, and missing expected rows are not fully detected. VM status does not prove guest connectivity or storage health. A VM in `ERROR`, a failed or unreachable check, a stopped or expected-but-missing unit, or an unavailable API makes the command return nonzero; `(none returned)` means the API successfully returned an empty VM list, not proof of workload quiescence.
 
-For both the table and the more detailed check below, use `bash scripts/lab-recover.sh --full`. This runs the table first and then invokes the existing full audit, including a local sudo prompt. The checks are independent: the full audit still runs if the table identifies an issue. Neither mode restarts anything.
+For both the table and the more detailed check below, use `bash "$HOME/fishbone/scripts/lab-recover.sh" --full`. This runs the table first and then invokes the existing full audit with noninteractive sudo. Add `--ask-become-pass` if the nodes require a local sudo password prompt. The checks are independent: the full audit still runs if the table identifies an issue. Neither mode restarts anything.
 
 Alternatively, from the **repository root on the management VM**, activate the Kolla environment and run the original combined check directly:
 
 ```bash
 source "$HOME/.venvs/kolla-2026.2/bin/activate"
-bash scripts/lab-health-full.sh
+bash "$HOME/fishbone/scripts/lab-health-full.sh"
 ```
 
-Enter the node sudo password at the local terminal prompt for the container checks. The tool does not store or print that password. The first part checks the current inventory, SSH, host resources, management-address service ports, cloud authentication, and available service/agent lists. The second part uses sudo to inspect the MariaDB and RabbitMQ containers, run local application diagnostics, and compare reported Galera state across the expected members of a single inventory shard. It never restarts services, and it does not display tokens, passwords, raw Docker inspection data, cluster UUIDs, or application logs.
+If passwordless sudo is unavailable, add `--ask-become-pass` and enter the node sudo password at the local terminal prompt. The tool does not store or print that password. The first part checks the current inventory, SSH, host resources, management-address service ports, cloud authentication, and available service/agent lists. The second part uses sudo to inspect the MariaDB and RabbitMQ containers, run local application diagnostics, and compare reported Galera state across the expected members of a single inventory shard. It never restarts services, and it does not display tokens, passwords, raw Docker inspection data, cluster UUIDs, or application logs.
 
-For the host/cloud portion only, without sudo, run `python3 scripts/lab-health.py`. For a different inventory or named cloud, use `bash scripts/lab-health-full.sh --inventory PATH --cloud NAME`. A nonzero exit means at least one result needs attention or could not be checked; it is not itself a diagnosis.
+For the host/cloud portion only, without sudo, run `python3 "$HOME/fishbone/scripts/lab-health.py"`. For a different inventory or named cloud, use `bash "$HOME/fishbone/scripts/lab-health-full.sh" --inventory PATH --cloud NAME`. A nonzero exit means at least one result needs attention or could not be checked; it is not itself a diagnosis.
 
-By default, the host dashboard checks the `control`, `compute`, and `network` inventory groups; it does not include a host that is **only** in `storage`. If you have a separate storage group, additionally run `python3 scripts/lab-health.py --group control --group compute --group network --group storage` after confirming all four groups exist and are populated. The MariaDB and RabbitMQ TCP probes use each target's inventory management address. If the service binds to a different API address, a blocked TCP probe does not establish that the service is down.
+By default, the host dashboard checks the `control`, `compute`, and `network` inventory groups; it does not include a host that is **only** in `storage`. If you have a separate storage group, additionally run `python3 "$HOME/fishbone/scripts/lab-health.py" --group control --group compute --group network --group storage` after confirming all four groups exist and are populated. The MariaDB and RabbitMQ TCP probes use each target's inventory management address. If the service binds to a different API address, a blocked TCP probe does not establish that the service is down.
 
 | Result | Meaning |
 |---|---|
@@ -121,20 +134,20 @@ A failed MariaDB port or HTTP `502` is a symptom, not enough evidence to choose 
 
 ```bash
 ansible-inventory -i /etc/kolla/multinode --graph mariadb
-ansible -i /etc/kolla/multinode mariadb -b -K \
+ansible -i /etc/kolla/multinode mariadb -b \
   -m ansible.builtin.command -a 'docker ps -a --filter name=mariadb'
 ```
 
-Enter your sudo password locally. Look for the exact `mariadb` container and its status on **every** configured member; the filter may also show temporary recovery containers. An Ansible `CHANGED` label here is the command module's default—it is a read-only listing. Container state alone does not establish whether Galera has a Primary component: containers can be running while the database cluster is non-primary.
+Look for the exact `mariadb` container and its status on **every** configured member; the filter may also show temporary recovery containers. An Ansible `CHANGED` label here is the command module's default—it is a read-only listing. Container state alone does not establish whether Galera has a Primary component: containers can be running while the database cluster is non-primary.
 
 If containers are running but the database is not ready, inspect the actual MariaDB application log on each member (the wrapper output from `docker logs` can omit it). If SQL is responding, also run the read-only [Galera status check](#verify-galera-and-rabbitmq); a failed SQL query means **unknown**, not automatically “no Primary.”
 
 ```bash
-ansible -i /etc/kolla/multinode mariadb -b -K -m ansible.builtin.command \
+ansible -i /etc/kolla/multinode mariadb -b -m ansible.builtin.command \
   -a 'docker exec mariadb tail -n 40 /var/log/kolla/mariadb/mariadb.log'
 ```
 
-Enter sudo at the local prompt. Check the newest timestamps, not old entries. These logs may contain private information; redact them before sharing. If a container is restarting and `docker exec` fails, its state is **unknown**, not proof of a complete outage. `gvwstate.dat` missing alone does not prove the database is corrupt; do not create or edit it by hand.
+Check the newest timestamps, not old entries. These logs may contain private information; redact them before sharing. If a container is restarting and `docker exec` fails, its state is **unknown**, not proof of a complete outage. `gvwstate.dat` missing alone does not prove the database is corrupt; do not create or edit it by hand.
 
 | Observed state | Decision |
 |---|---|
@@ -149,7 +162,7 @@ Only after confirming a **complete MariaDB cluster outage** and reviewing backup
 
 ```bash
 ansible -i /etc/kolla/multinode mariadb -e '{"ansible_become": false}' -m ansible.builtin.ping
-ansible -i /etc/kolla/multinode mariadb -b -K \
+ansible -i /etc/kolla/multinode mariadb -b \
   -m ansible.builtin.command -a 'docker ps -a --filter name=mariadb'
 ```
 
@@ -158,18 +171,18 @@ If any MariaDB container is running, repeat the current SQL and log checks above
 Once those checks and the outage decision are complete, run the installed Kolla recovery once from the management VM:
 
 ```bash
-ANSIBLE_BECOME_ASK_PASS=true ANSIBLE_DISPLAY_SKIPPED_HOSTS=false \
-  kolla-ansible mariadb-recovery -i /etc/kolla/multinode
+ANSIBLE_DISPLAY_SKIPPED_HOSTS=false \
+  kolla-ansible mariadb-recovery -i /etc/kolla/multinode --become
 ```
 
-This is a **change**, not a check: Kolla stops MariaDB containers, runs WSREP recovery, normally compares recovered positions and chooses a member to bootstrap, modifies bootstrap state and configuration, and coordinates cluster startup. A preselected recovery-host override bypasses the normal selection; do not set one without a separate, verified recovery plan. Enter your sudo password at the local prompt. Stop if it reports a failure; do not repeatedly run recovery without diagnosing it. Do not share passwords, tokens, configuration files, or unredacted logs.
+This is a **change**, not a check: Kolla stops MariaDB containers, runs WSREP recovery, normally compares recovered positions and chooses a member to bootstrap, modifies bootstrap state and configuration, and coordinates cluster startup. A preselected recovery-host override bypasses the normal selection; do not set one without a separate, verified recovery plan. The example uses verified passwordless sudo. If the nodes require a sudo password, prefix the same command with `ANSIBLE_BECOME_ASK_PASS=true` and enter it at the local prompt; never enter the password in the command or chat. Stop if recovery reports a failure; do not repeatedly run it without diagnosing the cause. Do not share tokens, configuration files, or unredacted logs.
 
 ### Verify Galera and RabbitMQ
 
 After a successful recap with no failures or unreachable hosts, run the combined health dashboard again. Then verify actual Galera status on **every** database member. This example uses the Kolla healthcheck client configuration for an Ubuntu/Debian MariaDB image; it does not display that configuration:
 
 ```bash
-ansible -i /etc/kolla/multinode mariadb -b -K -m ansible.builtin.command \
+ansible -i /etc/kolla/multinode mariadb -b -m ansible.builtin.command \
   -a "docker exec mariadb mariadb --defaults-file=/etc/mysql/healthcheck.cnf --batch --skip-column-names -e \"SHOW GLOBAL STATUS WHERE Variable_name IN ('wsrep_cluster_status','wsrep_cluster_size','wsrep_local_state_comment','wsrep_ready','wsrep_connected','wsrep_cluster_state_uuid','wsrep_incoming_addresses')\""
 ```
 
@@ -178,7 +191,7 @@ Each member of the **same Galera shard** should report `Primary`, `Synced`, `wsr
 Check RabbitMQ's reported running members, alarms and partitions too:
 
 ```bash
-ansible -i /etc/kolla/multinode rabbitmq -b -K -m ansible.builtin.command \
+ansible -i /etc/kolla/multinode rabbitmq -b -m ansible.builtin.command \
   -a 'docker exec rabbitmq rabbitmq-diagnostics -q cluster_status'
 ```
 
@@ -190,7 +203,7 @@ Compare the running members with the configured `rabbitmq` inventory group and c
 - **An API returns 502 or 503:** a proxy may be unable to use its backend, but the HTTP status alone does not identify why. Check the database, RabbitMQ, and the affected API's local health first. If those dependencies are healthy, inspect the affected API's logs on its inventory members; do not keep repeating MariaDB recovery. For example, to inspect Neutron server logs on the nodes in `neutron-server`:
 
   ```bash
-  ansible -i /etc/kolla/multinode neutron-server -b -K -m ansible.builtin.command \
+  ansible -i /etc/kolla/multinode neutron-server -b -m ansible.builtin.command \
     -a 'docker exec neutron_server tail -n 40 /var/log/kolla/neutron/neutron-server.log'
   ```
 
@@ -242,10 +255,10 @@ Run these commands on the **management VM**, with the Kolla environment active. 
 From the repository root with the Kolla environment active, choose **one** inventory alias shown in the table and **one** approved service name from the reference below. This example selects `nova_compute`; replace `NODE_ALIAS` with the actual affected inventory alias:
 
 ```bash
-bash scripts/lab-recover.sh --restart --node NODE_ALIAS --service nova_compute
+bash "$HOME/fishbone/scripts/lab-recover.sh" --restart --node NODE_ALIAS --service nova_compute
 ```
 
-The tool shows the selected node, literal inventory IP, and service and requires the exact confirmation phrase displayed, then prompts for the node sudo password locally. It requires an SSH target with a literal inventory IP and refuses local, loopback, or management-interface addresses; if your inventory uses only a DNS name, configure and review its literal `ansible_host` first. The tool rechecks the inventory after confirmation and pins the chosen address, but it cannot eliminate all concurrent-change races. Do not put the password in chat or in the command. If confirmation is declined, no restart is sent. The playbook validates the one-node target and allowlist, checks the unit and existing container, requests one restart of the selected unit, and checks its resulting state. Systemd dependencies can affect other units. It does **not** establish healthy dependencies, sufficient capacity, application-level health, or quorum on your behalf; those require separate review. A stopped existing unit may be started by `restart`. If a check fails or the outcome is unclear, stop and inspect the result; do not blindly repeat the action. The confirmation is an operator safeguard, not an access-control boundary; an administrator can still invoke systemd directly.
+The tool shows the selected node, literal inventory IP, and service and requires the exact confirmation phrase displayed. It uses noninteractive sudo by default; add `--ask-become-pass` for a local password prompt when needed. It requires an SSH target with a literal inventory IP and refuses local, loopback, or management-interface addresses; if your inventory uses only a DNS name, configure and review its literal `ansible_host` first. The tool rechecks the inventory after confirmation and pins the chosen address, but it cannot eliminate all concurrent-change races. Do not put the password in chat or in the command. If confirmation is declined, no restart is sent. The playbook validates the one-node target and allowlist, checks the unit and existing container, requests one restart of the selected unit, and checks its resulting state. Systemd dependencies can affect other units. It does **not** establish healthy dependencies, sufficient capacity, application-level health, or quorum on your behalf; those require separate review. A stopped existing unit may be started by `restart`. If a check fails or the outcome is unclear, stop and inspect the result; do not blindly repeat the action. The confirmation is an operator safeguard, not an access-control boundary; an administrator can still invoke systemd directly.
 
 The tool deliberately excludes MariaDB and RabbitMQ from its generic restart action. Do not use individual systemd restarts as a substitute for Galera or RabbitMQ cluster recovery. Follow the database section above or a broker-specific procedure.
 

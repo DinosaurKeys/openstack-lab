@@ -76,6 +76,17 @@ class RecoveryInterfaceTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(marker.exists())
 
+    def test_missing_inventory_value_does_not_run_commands(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as tmp:
+            marker = Path(tmp) / 'called'
+            for name in ('ansible-inventory', 'ansible', 'ansible-playbook', 'openstack'):
+                tool = Path(tmp) / name
+                tool.write_text('#!/bin/sh\ntouch "$MARKER"\nexit 1\n')
+                tool.chmod(0o755)
+            result = self.run_command('--inventory', '--help', extra_env={'PATH': tmp + ':' + os.environ['PATH'], 'MARKER': str(marker)})
+            self.assertFalse(marker.exists())
+            self.assertTrue(result.returncode != 0 or 'usage:' in result.stdout.lower())
+
     def test_restart_requires_node_and_service(self):
         result = self.run_command('--restart')
         self.assertNotEqual(result.returncode, 0)
@@ -132,6 +143,12 @@ class RecoveryRestartSelectionTest(unittest.TestCase):
             self.assertIn(host_a, text)
             self.assertIn(host_b, text)
 
+    def test_observe_node_cannot_inherit_become_prompt(self):
+        with mock.patch.dict('os.environ', {'ANSIBLE_BECOME_ASK_PASS': 'true'}), \
+             mock.patch.object(self.mod.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, stdout='')) as run:
+            self.mod.observe_node('node-a', '/fake/inventory')
+            self.assertEqual(run.call_args.kwargs.get('env', {}).get('ANSIBLE_BECOME_ASK_PASS'), 'false')
+
     def test_full_mode_shows_table_then_runs_existing_full_dashboard(self):
         with mock.patch.object(self.mod, 'check', return_value=0) as check, \
              mock.patch.object(self.mod.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
@@ -170,10 +187,49 @@ class RecoveryRestartSelectionTest(unittest.TestCase):
             self.assertEqual(self.mod.main(['--restart', '--node', 'node-a', '--service', 'nova_compute']), 0)
             args = run.call_args.args[0]
             self.assertEqual(args[0], 'ansible-playbook')
-            self.assertIn('-K', args)
+            self.assertNotIn('-K', args)
+            self.assertEqual(run.call_args.kwargs['env']['ANSIBLE_BECOME_FLAGS'], '-H -n')
             import json
             extra = json.loads(args[args.index('-e') + 1])
-            self.assertEqual(extra, {'recovery_target': 'node-a', 'recovery_service': 'nova_compute', 'recovery_authorized': True, 'ansible_host': '192.0.2.10', 'ansible_connection': 'ssh'})
+            self.assertEqual(extra, {'recovery_target': 'node-a', 'recovery_service': 'nova_compute', 'recovery_authorized': True, 'ansible_host': '192.0.2.10', 'ansible_connection': 'ssh', 'ansible_become_flags': '-H -n'})
+
+    def test_restart_clears_inherited_prompt_unless_explicit(self):
+        inventory = {'_meta': {'hostvars': {'node-a': {'ansible_host': '192.0.2.10'}}}}
+        with mock.patch.dict('os.environ', {'ANSIBLE_BECOME_ASK_PASS': 'true'}), \
+             mock.patch.object(self.mod, 'read_inventory', return_value=(inventory, ['node-a'])), \
+             mock.patch.object(self.mod, 'local_addresses', return_value={'192.0.2.99'}), \
+             mock.patch('sys.stdin') as stdin, mock.patch('builtins.input', return_value='RESTART node-a nova_compute'), \
+             mock.patch.object(self.mod.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+            stdin.isatty.return_value = True
+            self.assertEqual(self.mod.main(['--restart', '--node', 'node-a', '--service', 'nova_compute']), 0)
+            self.assertEqual(run.call_args.kwargs.get('env', {}).get('ANSIBLE_BECOME_ASK_PASS'), 'false')
+
+    def test_restart_explicit_password_prompt(self):
+        inventory = {'_meta': {'hostvars': {'node-a': {'ansible_host': '192.0.2.10'}}}}
+        with mock.patch.object(self.mod, 'read_inventory', return_value=(inventory, ['node-a'])), \
+             mock.patch.object(self.mod, 'local_addresses', return_value={'192.0.2.99'}), \
+             mock.patch('sys.stdin') as stdin, mock.patch('builtins.input', return_value='RESTART node-a nova_compute'), \
+             mock.patch.object(self.mod.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+            stdin.isatty.return_value = True
+            self.assertEqual(self.mod.main(['--restart', '--node', 'node-a', '--service', 'nova_compute', '-K']), 0)
+            self.assertIn('-K', run.call_args.args[0])
+
+    def test_restart_failure_suggests_password_option(self):
+        inventory = {'_meta': {'hostvars': {'node-a': {'ansible_host': '192.0.2.10'}}}}
+        with mock.patch.object(self.mod, 'read_inventory', return_value=(inventory, ['node-a'])), \
+             mock.patch.object(self.mod, 'local_addresses', return_value={'192.0.2.99'}), \
+             mock.patch('sys.stdin') as stdin, mock.patch('builtins.input', return_value='RESTART node-a nova_compute'), \
+             mock.patch.object(self.mod.subprocess, 'run', return_value=subprocess.CompletedProcess([], 2)), \
+             mock.patch('builtins.print') as printer:
+            stdin.isatty.return_value = True
+            self.assertNotEqual(self.mod.main(['--restart', '--node', 'node-a', '--service', 'nova_compute']), 0)
+            self.assertIn('--ask-become-pass', str(printer.call_args_list))
+
+    def test_full_forwards_explicit_password_option(self):
+        with mock.patch.object(self.mod, 'check', return_value=0), \
+             mock.patch.object(self.mod.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(self.mod.main(['--full', '--ask-become-pass']), 0)
+            self.assertIn('--ask-become-pass', run.call_args.args[0])
 
     def test_management_nonloopback_address_never_restarts(self):
         fake_inv = {'_meta': {'hostvars': {'node-a': {'ansible_host': '192.0.2.50'}}}}

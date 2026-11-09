@@ -43,6 +43,12 @@ class DashboardTest(unittest.TestCase):
             code = health.main(args or [])
         return code, output.getvalue()
 
+    def test_standalone_check_cannot_inherit_become_prompt(self):
+        with patch.dict('os.environ', {'ANSIBLE_BECOME_ASK_PASS': 'true'}), \
+             patch.object(health.subprocess, 'run', return_value=result()) as run:
+            health.run(['ansible', '--version'])
+            self.assertEqual(run.call_args.kwargs.get('env', {}).get('ANSIBLE_BECOME_ASK_PASS'), 'false')
+
     def test_help_is_available(self):
         completed = subprocess.run([sys.executable, str(SCRIPT), '--help'], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)

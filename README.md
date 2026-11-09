@@ -54,7 +54,7 @@ _Visual overview only. Follow the [Full Installation Guide](docs/FULL-INSTALLATI
 | `diagrams/openstack-lab-architecture.svg` | Target topology diagram |
 | `diagrams/openstack-full-installation.svg` | Privacy-safe architecture and ordered installation overview |
 | `ansible/ansible.cfg` | Project Ansible defaults |
-| `ansible/playbooks/ensure-time-sync.yml` | Read-only host/time audit by default; optional UTC and Chrony remediation |
+| `ansible/playbooks/ensure-time-sync.yml` | Read-only host/time audit by default; optional configurable timezone and Chrony remediation |
 
 ## Safety
 

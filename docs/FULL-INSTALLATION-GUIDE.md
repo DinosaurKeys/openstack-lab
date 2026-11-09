@@ -124,7 +124,7 @@ Completion: SSH to each node with the dedicated key returns its expected hostnam
 Use a dedicated Python virtual environment. Kolla-Ansible 2026.2 supports Ansible 13 or 14; install that supported range explicitly in the virtual environment before installing Kolla-Ansible. Do not mix this deployment environment with Ubuntu’s system Ansible packages.
 
 ```bash
-sudo apt install -y git python3-dev libffi-dev gcc libssl-dev libdbus-glib-1-dev python3-venv
+sudo apt install -y git curl python3-dev libffi-dev gcc libssl-dev libdbus-glib-1-dev python3-venv
 mkdir -p "$HOME/.venvs"
 python3 -m venv "$HOME/.venvs/kolla-2026.2"
 source "$HOME/.venvs/kolla-2026.2/bin/activate"
@@ -369,28 +369,42 @@ Completion: each node appears in `control`, `network`, and `compute`; no upstrea
 
 Kolla-Ansible 2026.2 accepts any one active host time service from this list: `chrony`, `chronyd`, `ntp`, `ntpd`, or `systemd-timesyncd`. These are alternatives; you do not need to install all of them. On Ubuntu 24.04 LTS, `systemd-timesyncd` is normally enabled by default. Ubuntu changed the default to Chrony starting with 25.10. See [Ubuntu's time synchronization guide](https://ubuntu.com/server/docs/use-timedatectl-and-timesyncd/).
 
-On the management VM, clone this repository if it is not already present, change to its root directory, and activate the Kolla virtual environment. The project playbook checks hostname resolution, timezone, clock synchronization, and active time services on the `control` nodes and the upstream inventory's `deployment` group (localhost). Audit mode is read-only:
+On the management VM, use the existing checkout at `$HOME/fishbone` and activate the Kolla virtual environment. If that checkout is absent, clone the repository first (for example, `git clone git@github.com:DinosaurKeys/openstack-lab.git "$HOME/fishbone"`). The project playbook checks hostname resolution, timezone, clock synchronization, and active time services on the `control` nodes and the upstream inventory's `deployment` group (localhost). Audit mode is read-only:
+
+```bash
+cd "$HOME/fishbone" && source "$HOME/.venvs/kolla-2026.2/bin/activate"
+```
+
+Stop if that command fails. Then run:
 
 ```bash
 ansible-playbook -i /etc/kolla/multinode \
-  ansible/playbooks/ensure-time-sync.yml \
+  "$HOME/fishbone/ansible/playbooks/ensure-time-sync.yml" \
   -e '{"ansible_become": false}'
 ```
 
-The long service list is one probe for several possible service names; the playbook reports each status. Missing or inactive alternatives are normal. At least one must be `active`, the timezone must be `UTC` or `Etc/UTC`, and `NTPSynchronized` must be `yes`. If all assertions pass on all four systems, Step 6 is complete. Do not install Chrony if `systemd-timesyncd` is already active and synchronized.
+The long service list is one probe for several possible service names; the playbook reports each status. Missing or inactive alternatives are normal. At least one must be `active`, the timezone must match `time_sync_timezone` exactly, and `NTPSynchronized` must be `yes`. The expected timezone defaults to `Europe/Bucharest`, the chosen setting for all four systems in this lab. The playbook validates that the expected zone is available on each host before any changes. If all assertions pass on all four systems, Step 6 is complete. Do not install Chrony if `systemd-timesyncd` is already active and synchronized.
 
-If the audit finds the timezone is not UTC, or finds no supported time service active, the playbook can correct it. It sets UTC when needed; it installs, enables, and starts Chrony only when none of the supported services is active. If a service is active but the clock is not synchronizing, it waits and reports failure rather than installing a second daemon. Review the audit result, then explicitly enable changes:
+If the audit finds a timezone mismatch or no supported time service active, the playbook can correct it. It sets the expected timezone when needed; it installs, enables, and starts Chrony only when none of the supported services is active. If a service is active but the clock is not synchronizing, it waits and reports failure rather than installing a second daemon. Review the audit result, then explicitly enable changes:
 
 ```bash
 ansible-playbook -i /etc/kolla/multinode \
-  ansible/playbooks/ensure-time-sync.yml \
+  "$HOME/fishbone/ansible/playbooks/ensure-time-sync.yml" \
   -e '{"time_sync_apply": true, "ansible_become": true}' \
-  --become --ask-become-pass
+  --become
 ```
 
-`--ask-become-pass` (`-K`) prompts for the privilege-escalation password; never put it in the inventory. One password is used for the selected hosts. If host passwords differ, run the apply command with `--limit node1`, then `node2`, `node3`, and `localhost` (the management VM) separately. Installing Chrony may replace a conflicting time-service package: review your distribution's package changes before applying. The install path requires working APT repositories and reachable time servers.
+The example assumes verified passwordless sudo on every target. If a password is required, add `--ask-become-pass` (`-K`) to prompt locally; never put the password in the inventory. One password is used for the selected hosts. If host passwords differ, run the apply command with `--limit node1`, then `node2`, `node3`, and `localhost` (the management VM) separately. Installing Chrony may replace a conflicting time-service package: review your distribution's package changes before applying. The install path requires working APT repositories and reachable time servers.
 
-The playbook is intentionally read-only by default. Its source is [`ansible/playbooks/ensure-time-sync.yml`](../ansible/playbooks/ensure-time-sync.yml). Completion means all four systems resolve each node name to its inventory address, use UTC, have one supported time service active, and report a synchronized clock.
+To choose UTC instead, explicitly set the same override on both audit and any later apply command. This example audits only; adding `"time_sync_apply": true` and become options would authorize changes:
+
+```bash
+ansible-playbook -i /etc/kolla/multinode \
+  "$HOME/fishbone/ansible/playbooks/ensure-time-sync.yml" \
+  -e '{"time_sync_timezone": "Etc/UTC", "ansible_become": false}'
+```
+
+The playbook is intentionally read-only by default. Its source is [`ansible/playbooks/ensure-time-sync.yml`](../ansible/playbooks/ensure-time-sync.yml). Completion means all four systems resolve each node name to its inventory address, use the expected timezone, have one supported time service active, and report a synchronized clock.
 
 ## Step 7 — Configure Kolla globals and generated passwords
 
@@ -461,9 +475,17 @@ Keep `/etc/kolla/passwords.yml` private and back it up securely; do not print it
 
 SSH authenticates your normal administrator account to a node. Installing packages and configuring system services also requires root privileges. Ansible calls the switch to root **become** (usually implemented with `sudo`). A successful SSH or `ping` test does not prove become works.
 
-For the interactive method below, the same become password must work on all selected hosts, including `localhost` if the inventory targets it. The password is entered at Ansible's terminal prompt; never put it in a command, environment variable, inventory, repository, or chat. This method does not grant passwordless sudo. Anyone with become privileges can make root-level changes, so secure the administrator and SSH accounts.
+For the password-prompt method, the same become password must work on all selected hosts, including `localhost` if the inventory targets it. Enter it only at Ansible's terminal prompt; never put it in a command, environment variable, inventory, repository, or chat. Anyone with become privileges can make root-level changes, so secure the administrator and SSH accounts.
 
-Test become from the management VM with the virtual environment active:
+On R2D2, first test the existing passwordless sudo configuration on all intended nodes and the deployment host, without prompting:
+
+```bash
+ANSIBLE_BECOME_ASK_PASS=false ansible -i /etc/kolla/multinode 'control:deployment' \
+  -m ansible.builtin.command -a 'id -u' \
+  -e '{"ansible_become": true, "ansible_become_flags": "-H -n"}'
+```
+
+Each of the three nodes and `localhost` must return `0` and `rc=0`. `id -u` only reports the effective user ID; the command module may label it `CHANGED` even though this probe makes no configuration changes. If any host fails, do not proceed as though passwordless access is available. For hosts requiring a password, use the secure interactive alternative instead:
 
 ```bash
 ansible -i /etc/kolla/multinode 'control:deployment' \
@@ -471,17 +493,17 @@ ansible -i /etc/kolla/multinode 'control:deployment' \
   -e '{"ansible_become": true}' --ask-become-pass
 ```
 
-Enter the sudo password at `BECOME password:`. Each of the three nodes and `localhost` should return `0` and `rc=0`. `id -u` only reports the effective user ID; the command module may label it `CHANGED` even though this probe makes no configuration changes. If any host fails, stop and fix its SSH, sudo permission or password before bootstrap. If passwords differ, one prompt cannot supply all of them: stop and arrange a secure, individually configured credential method rather than storing plaintext passwords. Do not proceed based only on SSH ping.
+Enter the password at `BECOME password:`. If passwords differ, one prompt cannot supply all of them: stop and arrange a secure, individually configured credential method rather than storing plaintext passwords. Do not proceed based only on SSH ping.
 
-### 8.2 — Tell Kolla's Ansible to prompt
+### 8.2 — Select Kolla's sudo mode
 
-The Kolla 2026.2 CLI's `bootstrap-servers` command does not expose Ansible's `--ask-become-pass` (`-K`) option. Instead, set Ansible's prompt option **in the same management-VM terminal** before running Kolla:
+The Kolla 2026.2 CLI's `bootstrap-servers` command does not expose Ansible's `--ask-become-pass` (`-K`) option. If the passwordless check above passed on **every** selected host, set this in the same management-VM terminal:
 
 ```bash
-export ANSIBLE_BECOME_ASK_PASS=true
+export ANSIBLE_BECOME_ASK_PASS=false
 ```
 
-Type `true` literally: it means “ask for a password,” not the password itself. This command normally prints nothing. The setting lasts only in the current shell and its child processes; repeat it when starting a new terminal. Ansible asks for the password when a Kolla playbook starts. Enter it only at the prompt, and repeat if a later Kolla command prompts again. To remove this setting from the current shell after your work, run `unset ANSIBLE_BECOME_ASK_PASS`.
+If an interactive password is required instead, set `ANSIBLE_BECOME_ASK_PASS=true` in that terminal and enter the password only at the resulting prompt. The words `true` and `false` are literal options, not passwords. The setting lasts only in the current shell and its child processes; choose the appropriate mode again in a new terminal. To remove it afterward, run `unset ANSIBLE_BECOME_ASK_PASS`.
 
 ### 8.3 — Bootstrap, then check
 
@@ -493,7 +515,7 @@ To preserve the existing firewall settings during bootstrap, run bootstrap by it
 kolla-ansible bootstrap-servers -i /etc/kolla/multinode -e disable_firewall=false
 ```
 
-At the password prompt, enter the same become password you tested. Wait for the command to finish. It may install packages and change host configuration; it is not a read-only check. If the recap shows any failed or unreachable hosts, stop, examine the error, and do not proceed to prechecks.
+If you selected interactive sudo, enter the tested password at the prompt. Wait for the command to finish. It may install packages and change host configuration; it is not a read-only check. If the recap shows any failed or unreachable hosts, stop, examine the error, and do not proceed to prechecks.
 
 Only after bootstrap succeeds, run prechecks. For the default `quay.io/openstack.kolla` test images used by this learning lab, the 2026.2 CLI requires the explicit `--use-test-images` acknowledgment:
 
@@ -505,18 +527,18 @@ These are testing images, not a production image recommendation. If using a diff
 
 Enter the password again if prompted. Stop if prechecks fail; correct the underlying issue and rerun them. Warnings about hyphens in upstream group names are not by themselves a reason to rename those groups. Kolla/Ansible output can contain service credentials even in skipped task details: do not post full logs. If asking for help, first redact passwords, tokens, cookies, private keys and authorization headers, including encoded credentials; share only the relevant failed task and PLAY RECAP.
 
-**Step 8 is complete when:** bootstrap and prechecks both finish successfully. Only then move to Step 9. Keep this same terminal's prompt setting for later Kolla commands, or set it again in a new terminal.
+**Step 8 is complete when:** bootstrap and prechecks both finish successfully. Only then move to Step 9. Keep this same terminal's selected sudo mode for later Kolla commands, or set it again in a new terminal.
 
 ## Step 9 — Deploy OpenStack
 
-Run this step on the management VM with the Kolla virtual environment active. In **this same terminal**, explicitly enable the sudo prompt and suppress skipped-task output:
+Run this step on the management VM with the Kolla virtual environment active. In **this same terminal**, select the verified sudo mode from Step 8 and suppress skipped-task output. For verified passwordless sudo:
 
 ```bash
-export ANSIBLE_BECOME_ASK_PASS=true
+export ANSIBLE_BECOME_ASK_PASS=false
 export ANSIBLE_DISPLAY_SKIPPED_HOSTS=false
 ```
 
-The value `true` is a literal option, **not** your sudo password. The settings from a launcher or a different terminal do not carry into this shell. Kolla should ask for the password at `BECOME password:`; if it does not, stop and verify the prompt setting before continuing.
+If a password prompt is required, use `ANSIBLE_BECOME_ASK_PASS=true` instead and enter the password only at `BECOME password:`. The values `true` and `false` are literal options, **not** your sudo password. Settings from a launcher or a different terminal do not carry into this shell; if the selected mode does not work, stop and recheck Step 8 before proceeding.
 
 **Credential safety:** Skipped-task suppression reduces output; it does **not** guarantee that passwords, tokens, or other secrets are hidden in successful or failed tasks, warnings, logs, or other output. Do not paste deployment output, configuration, or credentials into chat or Git. If a credential has been exposed, treat it as compromised and plan its coordinated rotation; do not blindly regenerate passwords in an existing deployment.
 
@@ -540,7 +562,15 @@ Completion: deployment and configuration validation finish successfully, and the
 
 ### 10.1 — Prepare the OpenStack client
 
-Run the Step 10 commands on the management VM as your normal user, in the Kolla virtual environment. Activate it if the prompt does not already show `(kolla-2026.2)`:
+Run the Step 10 commands on the management VM as your normal user, in the Kolla virtual environment. For an already configured cloud, a new terminal only needs the following to resume CLI access; do **not** rerun post-deploy or overwrite an existing `clouds.yaml` just to open a new terminal:
+
+```bash
+source "$HOME/.venvs/kolla-2026.2/bin/activate"
+export OS_CLOUD=kolla-admin
+openstack token issue -f value -c expires
+```
+
+For a **new installation**, activate the virtual environment before continuing with the one-time client setup below:
 
 ```bash
 source "$HOME/.venvs/kolla-2026.2/bin/activate"
@@ -553,14 +583,13 @@ python -m pip install python-openstackclient \
   -c https://releases.openstack.org/constraints/upper/2026.2
 ```
 
-Generate the client configuration on the management VM. If your inventory requires become, make sure the prompt is enabled in this terminal (see Step 8). This option is the literal word `true`, not your password:
+Generate the client configuration on the management VM. Use the sudo mode verified in Step 8 in this same terminal; for verified passwordless sudo, set `ANSIBLE_BECOME_ASK_PASS=false`. If an interactive password is required, use `true` instead and enter the password only at the local prompt. Then run:
 
 ```bash
-export ANSIBLE_BECOME_ASK_PASS=true
 kolla-ansible post-deploy -i /etc/kolla/multinode
 ```
 
-Enter the sudo password at the prompt. **Stop if post-deploy fails.** Continue only after its recap has no failures and `/etc/kolla/clouds.yaml` exists. The following copy overwrites the destination; if it already exists, stop and protect any existing configuration before proceeding. Never display or share either copy: it contains credentials.
+**Stop if post-deploy fails.** Continue only after its recap has no failures and `/etc/kolla/clouds.yaml` exists. The following copy overwrites the destination; if it already exists, stop and protect any existing configuration before proceeding. Never display or share either copy: it contains credentials.
 
 The source may be owned by root. Copy it with `sudo`, setting the destination owner back to your normal management account:
 
@@ -732,7 +761,14 @@ Never commit `.terraform/`, `*.tfstate`, saved plans, application credentials, o
 
 ## Step 13 — Enable Prometheus and Grafana
 
-Kolla-Ansible can deploy Prometheus and Grafana as part of the cloud. After the core deployment is stable, first add one or more real host aliases to `[monitoring]` in `/etc/kolla/multinode`, preserving the upstream child-group mappings. The copied sample’s `monitoring01` is not a real host; replace it with a chosen host. If no monitoring host is selected, keep Prometheus and Grafana disabled and do not run this step’s deployment commands.
+Kolla-Ansible can deploy Prometheus and Grafana as part of the cloud. On the management VM, activate the Kolla virtual environment and review the current monitoring targets without changing anything:
+
+```bash
+source "$HOME/.venvs/kolla-2026.2/bin/activate"
+ansible-inventory -i /etc/kolla/multinode --graph monitoring
+```
+
+After the core deployment is stable, first add one or more real host aliases to `[monitoring]` in `/etc/kolla/multinode`, preserving the upstream child-group mappings. The copied sample’s `monitoring01` is not a real host; replace it with a chosen host. If no monitoring host is selected, keep Prometheus and Grafana disabled and do not run this step’s deployment commands.
 
 Then add these settings to `/etc/kolla/globals.yml`:
 
@@ -741,7 +777,7 @@ enable_prometheus: true
 enable_grafana: true
 ```
 
-Then apply the configuration through Kolla-Ansible. Activate the Kolla virtual environment and enable the sudo prompt in this terminal as described in Step 8. For the guide's default test-image registry, explicitly acknowledge test images for prechecks:
+Then apply the configuration through Kolla-Ansible. Activate the Kolla virtual environment and select the verified sudo mode in this terminal as described in Step 8. This is a **cloud configuration change**, not a read-only monitoring check: review the targets, dependencies, impact, and backup before proceeding. For the guide's default test-image registry, explicitly acknowledge test images for prechecks:
 
 ```bash
 kolla-ansible prechecks -i /etc/kolla/multinode --use-test-images

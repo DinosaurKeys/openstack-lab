@@ -4,6 +4,7 @@
   gather_facts: false
   vars:
     time_sync_apply: false
+    time_sync_timezone: Europe/Bucharest
     supported_ntp_units:
       - chrony
       - chronyd
@@ -12,6 +13,19 @@
       - systemd-timesyncd
 
   tasks:
+    - name: List available timezones on the host
+      ansible.builtin.command:
+        cmd: timedatectl list-timezones
+      register: available_timezones
+      changed_when: false
+
+    - name: Require a valid expected timezone before making changes
+      ansible.builtin.assert:
+        that:
+          - time_sync_timezone is string
+          - time_sync_timezone in available_timezones.stdout_lines
+        fail_msg: "Timezone {{ time_sync_timezone }} is not available on {{ inventory_hostname }}."
+
     - name: Resolve each node alias from this host
       ansible.builtin.command:
         cmd: "getent hosts {{ item }}"
@@ -50,12 +64,12 @@
       changed_when: false
       failed_when: false
 
-    - name: Set the timezone to UTC when applying changes
+    - name: Set the expected timezone when applying changes
       ansible.builtin.command:
-        cmd: timedatectl set-timezone UTC
+        cmd: "timedatectl set-timezone {{ time_sync_timezone }}"
       when:
         - time_sync_apply | bool
-        - (timezone_before.stdout | trim) not in ['UTC', 'Etc/UTC']
+        - (timezone_before.stdout | trim) != time_sync_timezone
 
     - name: Install Chrony when no supported NTP service is active
       ansible.builtin.apt:
@@ -111,10 +125,10 @@
           - "{{ inventory_hostname }} NTPSynchronized={{ sync_after.stdout | trim }}"
           - "{{ inventory_hostname }} NTP service status={{ ntp_services_after.stdout_lines | join(', ') }}"
 
-    - name: Require UTC and a synchronized clock with a supported active service
+    - name: Require the expected timezone and a synchronized clock with a supported active service
       ansible.builtin.assert:
         that:
-          - (timezone_after.stdout | trim) in ['UTC', 'Etc/UTC']
+          - (timezone_after.stdout | trim) == time_sync_timezone
           - (sync_after.stdout | trim) == 'yes'
           - ntp_services_after.rc == 0
         fail_msg: >-
